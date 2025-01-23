@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Organization {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  opType      String
+  orgCode     String       @unique
+  orgType     String
+  authType    String
+  industry    String
+  serialNum   String       @unique @default(cuid())
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  oAuthClient OAuthClient?
+  users       User?
+}
+
+model User {
+  id             String       @id @default(uuid())
+  name           String       @unique
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organizationId String       @unique
+  certificates   Certificate?
+  logs           Log?
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+model Certificate {
+  id                String         @id @default(uuid())
+  serialNumber      String         @unique @default(cuid())
+  certTxId          String         @unique
+  signTxId          String         @unique
+  phoneNumber       String         @unique
+  userId            String         @unique
+  userCI            String
+  requestTitle      String
+  consentType       Int
+  deviceCode        String
+  deviceBrowser     String
+  issuedAt          DateTime       @default(now())
+  expiresAt         DateTime
+  revoked           Boolean        @default(false)
+  revokedAt         DateTime?
+  revocationReason  String?
+  user              User           @relation(fields: [userId], references: [id])
+  consentList       Consent?
+  logs              Log?
+  revocationEntries Revocation[]
+  signedConsentList SignedConsent?
+}
+
+model Consent {
+  id            String       @id @default(uuid())
+  txId          String       @unique
+  consentTitle  String
+  consent       String
+  consentLen    Int
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  certificateId String?      @unique
+  Certificate   Certificate? @relation(fields: [certificateId], references: [id])
+}
+
+model SignedConsent {
+  id               String       @id @default(uuid())
+  txId             String       @unique
+  signedConsent    String
+  signedConsentLen Int
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  certificateId    String?      @unique
+  Certificate      Certificate? @relation(fields: [certificateId], references: [id])
+}
+
+model Revocation {
+  id            String      @id @default(uuid())
+  certificateId String
+  revokedAt     DateTime    @default(now())
+  reason        String?
+  certificate   Certificate @relation(fields: [certificateId], references: [id])
+}
+
+model CertificateAuthority {
+  id              String   @id @default(uuid())
+  name            String
+  privateKey      String
+  publicKey       String
+  certificateData String
+  createdAt       DateTime @default(now())
+}
+
+model OAuthClient {
+  id             String       @id @default(uuid())
+  clientId       String       @unique
+  clientSecret   String       @unique
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+model Log {
+  id            String       @id @default(uuid())
+  userId        String       @unique
+  certificateId String?      @unique
+  action        String
+  timestamp     DateTime     @default(now())
+  details       String?
+  certificate   Certificate? @relation(fields: [certificateId], references: [id])
+  user          User         @relation(fields: [userId], references: [id])
+}
