@@ -1,23 +1,22 @@
 import { generateTIN } from '@/utils/generateTIN';
-import React from 'react';
 
-export const getSupport001 = async () => {
+export const getIA101 = async () => {
 	try {
 		const options = {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/x-www-form-urlencoded',
-				'x-api-tran-id': generateTIN('SU001'),
+				'x-api-tran-id': generateTIN('IA101'),
 			},
 			body: new URLSearchParams({
 				grant_type: 'client_credential',
 				client_id: process.env.NEXT_PUBLIC_CLIENT_ID || '',
 				client_secret: process.env.NEXT_PUBLIC_CLIENT_SECRET || '',
-				scope: 'manage',
+				scope: 'ca',
 			}),
 		};
 
-		const response = await fetch('http://localhost:3000/api/v2/mgmts/oauth/2.0/token', options);
+		const response = await fetch('http://localhost:3000/api/oauth/2.0/token', options);
 
 		if (!response.ok) {
 			// Handle HTTP errors
@@ -32,8 +31,8 @@ export const getSupport001 = async () => {
 	}
 };
 
-export const getSupport002 = async () => {
-	const token = await getSupport001();
+export const getIA102 = async () => {
+	const token = await getIA101();
 
 	const { access_token } = token;
 
@@ -42,12 +41,12 @@ export const getSupport002 = async () => {
 		headers: {
 			'Access-Control-Allow-Origin': '*',
 			'Content-Type': 'application/json',
+			'x-api-tran-id': generateTIN('IA102'),
 			Authorization: `Bearer ${access_token}`,
-			'x-api-tran-id': generateTIN('SU002'),
 		},
 	};
 
-	const response = await fetch(`http://localhost:3000/api/v2/mgmts/orgs?search_timestamp=`, options);
+	const response = await fetch(`http://localhost:3000/api/ca/sign_request`, options);
 
 	if (!response.ok) {
 		// Handle HTTP errors

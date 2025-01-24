@@ -118,3 +118,34 @@ model Log {
   certificate   Certificate? @relation(fields: [certificateId], references: [id])
   user          User         @relation(fields: [userId], references: [id])
 }
+
+model Account {
+  account_num        String           @id @unique
+  org_code           String
+  seqno              Int              @unique @default(autoincrement())
+  account_type       String
+  account_status     String
+  prod_name          String
+  is_consent         Boolean          @default(false)
+  is_minus           Boolean          @default(false)
+  is_foreign_deposit Boolean          @default(false)
+  created_at         DateTime         @default(now())
+  updated_at         DateTime         @default(now())
+  deposit_accounts   DepositAccount[]
+}
+
+model DepositAccount {
+  deposit_id          String   @id @unique
+  account_num         String   @unique
+  exp_date            DateTime
+  commit_amt          Decimal
+  issue_date          DateTime
+  currency_code       String
+  saving_method       String
+  monthly_paid_in_amt Decimal
+  balance_amt         Decimal
+  offered_rate        Decimal
+  last_paid_in_cnt    Int
+  withdrawable_amt    Decimal
+  account             Account  @relation(fields: [account_num], references: [account_num])
+}
