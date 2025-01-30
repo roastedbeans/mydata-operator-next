@@ -8,7 +8,7 @@ export type BodyIA102 = {
 	device_browser: string;
 	return_app_scheme_url: string;
 	consent_type: string;
-	consent_cnt: string;
+	consent_cnt: number;
 	consent_list: Consent[];
 };
 

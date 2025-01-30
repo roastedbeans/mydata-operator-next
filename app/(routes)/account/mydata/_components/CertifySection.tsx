@@ -1,6 +1,6 @@
 'use client';
 
-import { getSupport002 } from '@/app/_hooks/getSupport';
+import { getSupport002 } from '@/hooks/getSupport';
 import { Button } from '@heroui/button';
 import { Card, CardBody, CardFooter } from '@heroui/card';
 import React from 'react';
@@ -20,10 +20,12 @@ const CertifySection = () => {
 		setOrgs(orgs);
 	};
 
-	console.log('orgs:', selectedOrgs);
+	const handleConnect = () => {
+		console.log('selectedOrgs:', selectedOrgs);
+	};
 
 	return (
-		<div className='flex h-screen items-start justify-start flex-col gap-8 p-16'>
+		<div className='flex h-screen items-center justify-center flex-col gap-8 p-4 w-full'>
 			<Button onPress={handleGetToken}>Get Orgs</Button>
 			<h2 className='font-semibold'>Available Banks</h2>
 			<Card className='max-w-3xl w-full min-h-72 justify-start items-start'>
@@ -46,6 +48,7 @@ const CertifySection = () => {
 					<Button
 						disableRipple
 						disabled={selectedOrgs.length === 0}
+						onPress={handleConnect}
 						color={selectedOrgs.length === 0 ? 'default' : 'primary'}>
 						Connect
 					</Button>

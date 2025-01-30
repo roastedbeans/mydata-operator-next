@@ -1,7 +1,7 @@
-import { generateTIN } from '@/utils/generateTIN';
 import React from 'react';
+import { generateTIN } from '../utils/generateTIN';
 
-export const getSupport001 = async () => {
+export async function getSupport001() {
 	try {
 		const options = {
 			method: 'POST',
@@ -30,9 +30,9 @@ export const getSupport001 = async () => {
 		console.error('Error:', error);
 		throw error;
 	}
-};
+}
 
-export const getSupport002 = async () => {
+export async function getSupport002() {
 	const token = await getSupport001();
 
 	const { access_token } = token;
@@ -57,4 +57,4 @@ export const getSupport002 = async () => {
 	const res = await response.json();
 
 	return res;
-};
+}

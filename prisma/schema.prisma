@@ -10,7 +10,7 @@ datasource db {
 
 model Organization {
   id          String       @id @default(uuid())
-  name        String       @unique
+  name        String
   opType      String
   orgCode     String       @unique
   orgType     String
@@ -19,66 +19,77 @@ model Organization {
   serialNum   String       @unique @default(cuid())
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+  Account     Account[]
+  Log         Log[]
   oAuthClient OAuthClient?
-  users       User?
+  User        User[]
 }
 
 model User {
-  id             String       @id @default(uuid())
-  name           String       @unique
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  organizationId String       @unique
-  certificates   Certificate?
-  logs           Log?
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  id             String          @id @default(uuid())
+  name           String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  orgCode        String
+  accounts       Account[]
+  certificates   Certificate[]
+  consents       Consent[]
+  logs           Log[]
+  signedConsents SignedConsent[]
+  Organization   Organization    @relation(fields: [orgCode], references: [orgCode])
 }
 
 model Certificate {
-  id                String         @id @default(uuid())
-  serialNumber      String         @unique @default(cuid())
-  certTxId          String         @unique
-  signTxId          String         @unique
-  phoneNumber       String         @unique
-  userId            String         @unique
-  userCI            String
-  requestTitle      String
-  consentType       Int
-  deviceCode        String
-  deviceBrowser     String
-  issuedAt          DateTime       @default(now())
-  expiresAt         DateTime
-  revoked           Boolean        @default(false)
-  revokedAt         DateTime?
-  revocationReason  String?
-  user              User           @relation(fields: [userId], references: [id])
-  consentList       Consent?
-  logs              Log?
-  revocationEntries Revocation[]
-  signedConsentList SignedConsent?
+  id                     String               @id @default(uuid())
+  serialNumber           String               @default(cuid())
+  certTxId               String
+  signTxId               String
+  phoneNumber            String
+  userId                 String
+  userCI                 String
+  requestTitle           String
+  consentType            String
+  deviceCode             String
+  deviceBrowser          String
+  issuedAt               DateTime             @default(now())
+  expiresAt              DateTime
+  revoked                Boolean              @default(false)
+  revokedAt              DateTime?
+  revocationReason       String?
+  certificateAuthorityId String
+  CertificateAuthority   CertificateAuthority @relation(fields: [certificateAuthorityId], references: [id])
+  user                   User                 @relation(fields: [userId], references: [id])
+  consent                Consent[]
+  logs                   Log[]
+  revocationEntries      Revocation[]
+  signedConsent          SignedConsent[]
 }
 
 model Consent {
   id            String       @id @default(uuid())
-  txId          String       @unique
+  txId          String
   consentTitle  String
   consent       String
   consentLen    Int
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
-  certificateId String?      @unique
+  userId        String?
+  certificateId String?
   Certificate   Certificate? @relation(fields: [certificateId], references: [id])
+  user          User?        @relation(fields: [userId], references: [id])
 }
 
 model SignedConsent {
   id               String       @id @default(uuid())
-  txId             String       @unique
+  txId             String
   signedConsent    String
   signedConsentLen Int
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
-  certificateId    String?      @unique
+  userId           String?
+  certificateId    String?
   Certificate      Certificate? @relation(fields: [certificateId], references: [id])
+  user             User?        @relation(fields: [userId], references: [id])
 }
 
 model Revocation {
@@ -90,12 +101,13 @@ model Revocation {
 }
 
 model CertificateAuthority {
-  id              String   @id @default(uuid())
-  name            String
-  privateKey      String
-  publicKey       String
-  certificateData String
-  createdAt       DateTime @default(now())
+  id          String        @id @default(uuid())
+  caCode      String        @unique
+  name        String
+  privateKey  String
+  publicKey   String
+  createdAt   DateTime      @default(now())
+  Certificate Certificate[]
 }
 
 model OAuthClient {
@@ -109,43 +121,52 @@ model OAuthClient {
 }
 
 model Log {
-  id            String       @id @default(uuid())
-  userId        String       @unique
-  certificateId String?      @unique
-  action        String
-  timestamp     DateTime     @default(now())
+  id            String        @id @default(uuid())
+  userId        String
+  certificateId String?
+  actionType    String
+  timestamp     DateTime      @default(now())
   details       String?
-  certificate   Certificate? @relation(fields: [certificateId], references: [id])
-  user          User         @relation(fields: [userId], references: [id])
+  orgCode       String?
+  certificate   Certificate?  @relation(fields: [certificateId], references: [id])
+  Organization  Organization? @relation(fields: [orgCode], references: [orgCode])
+  user          User          @relation(fields: [userId], references: [id])
 }
 
 model Account {
-  account_num        String           @id @unique
-  org_code           String
-  seqno              Int              @unique @default(autoincrement())
-  account_type       String
-  account_status     String
-  prod_name          String
-  is_consent         Boolean          @default(false)
-  is_minus           Boolean          @default(false)
-  is_foreign_deposit Boolean          @default(false)
-  created_at         DateTime         @default(now())
-  updated_at         DateTime         @default(now())
-  deposit_accounts   DepositAccount[]
+  seqno            Int              @unique @default(autoincrement())
+  userId           String?
+  accountNum       String           @id @unique
+  accountStatus    String
+  accountType      String
+  createdAt        DateTime         @default(now())
+  firstName        String
+  isConsent        Boolean          @default(false)
+  isForeignDeposit Boolean          @default(false)
+  isMinus          Boolean          @default(false)
+  lastName         String
+  orgCode          String
+  phoneNumber      String
+  pinCode          String
+  prodName         String
+  updatedAt        DateTime         @default(now())
+  Organization     Organization     @relation(fields: [orgCode], references: [orgCode])
+  User             User?            @relation(fields: [userId], references: [id])
+  DepositAccount   DepositAccount[]
 }
 
 model DepositAccount {
-  deposit_id          String   @id @unique
-  account_num         String   @unique
-  exp_date            DateTime
-  commit_amt          Decimal
-  issue_date          DateTime
-  currency_code       String
-  saving_method       String
-  monthly_paid_in_amt Decimal
-  balance_amt         Decimal
-  offered_rate        Decimal
-  last_paid_in_cnt    Int
-  withdrawable_amt    Decimal
-  account             Account  @relation(fields: [account_num], references: [account_num])
+  accountNum       String
+  balanceAmt       Decimal
+  commitAmt        Decimal
+  currencyCode     String
+  depositId        String   @id @unique
+  expDate          DateTime
+  issueDate        DateTime
+  lastPaidInCnt    Int
+  monthlyPaidInAmt Decimal
+  offeredRate      Decimal
+  savingMethod     String
+  withdrawableAmt  Decimal
+  Account          Account  @relation(fields: [accountNum], references: [accountNum])
 }
