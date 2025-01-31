@@ -33,6 +33,10 @@ export const ResponseCodes = {
 		code: '1003',
 		message: 'Invalid or missing x-api-tran-id',
 	},
+	INVALID_API_TYPE: {
+		code: '1004',
+		message: 'Invalid or missing x-api-type',
+	},
 	NO_CERTIFICATE_FOUND: {
 		code: '1004',
 		message: 'No certificate found',

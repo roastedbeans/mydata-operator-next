@@ -30,13 +30,13 @@ export type BodyIA002 = {
 	ca_code: string;
 	username: string;
 	request_type: string;
-	password_len: number;
+	password_len: string;
 	password: string;
 	auth_type: string;
 	consent_type: string;
-	consent_len: number;
+	consent_len: string;
 	consent: string;
-	signed_person_info_req_len: number;
+	signed_person_info_req_len: string;
 	signed_person_info_req: string;
 	consent_nonce: string;
 	ucpid_nonce: string;
@@ -58,6 +58,9 @@ export type SignedConsent = {
 };
 
 const prisma = new PrismaClient();
+const otherBankAPI = process.env.OTHER_BANK_API || '';
+const orgCode = process.env.NEXT_PUBLIC_ORG_CODE || '';
+const otherOrgCode = process.env.OTHER_ORG_CODE || '';
 
 export const generateTIN = (prefix: string) => {
 	const date = new Date();
@@ -161,16 +164,18 @@ export const getIA103 = async (accessToken: string, body: BodyIA103) => {
 };
 
 export const getIA002 = async (body: BodyIA002) => {
+	// Assumption: Mydata app is looking for api of the bank with orgCode to get the access token
+
 	const options = {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/x-www-form-urlencoded',
 			'x-api-tran-id': generateTIN('IA002'),
 		},
-		body: JSON.stringify(body),
+		body: new URLSearchParams(body),
 	};
 
-	const response = await fetch(`http://localhost:5000/api/oauth/2.0/token`, options);
+	const response = await fetch(`${otherBankAPI}/api/oauth/2.0/token`, options);
 
 	if (!response.ok) {
 		// Handle HTTP errors
@@ -223,8 +228,8 @@ export async function getSupport002() {
 		headers: {
 			'Access-Control-Allow-Origin': '*',
 			'Content-Type': 'application/json',
-			Authorization: `Bearer ${access_token}`,
 			'x-api-tran-id': generateTIN('SU002'),
+			Authorization: `Bearer ${access_token}`,
 		},
 	};
 
@@ -240,24 +245,14 @@ export async function getSupport002() {
 	return res;
 }
 
-export const generateBodyIA102 = async () => {
-	const orgCode = faker.helpers.arrayElement(['ORG2025001']);
-	const ipCode = faker.helpers.arrayElement(['ORG2025002']);
-
+export const generateBodyIA102 = async (account: any) => {
 	// Fetch accounts that belong to the organization
-	const accounts = await prisma.account.findMany({
-		where: {
-			orgCode: orgCode,
-		},
-	});
 
 	const caCode = faker.helpers.arrayElement(['CA20250001']);
 	const newTimestamp = timestamp(new Date());
 	const serialNum = faker.helpers.arrayElement(['BASA20240204', 'BABB20230106']);
 
 	const signTxId = `${orgCode}_${caCode}_${newTimestamp}_${serialNum}`;
-
-	const account = faker.helpers.arrayElement(accounts);
 
 	const firstName = account.firstName;
 	const lastName = account.lastName;
@@ -300,7 +295,7 @@ export const generateBodyIA102 = async () => {
 	const consent_list = Array.from({ length: numConsents }, (_, index) => {
 		const consent = faker.helpers.arrayElement(consentValues);
 		const shaConsent = Buffer.from(consent).toString('base64');
-		const txId = `MD_${orgCode}_${ipCode}_${relayAgencyCode}_${caCode}_${newTimestamp}_${'XXAB0049000' + index}`;
+		const txId = `MD_${orgCode}_${otherOrgCode}_${relayAgencyCode}_${caCode}_${newTimestamp}_${'XXAB0049000' + index}`;
 
 		return {
 			tx_id: txId,
@@ -409,17 +404,16 @@ export const generateBodyIA002 = async (certTxId: string, consent_list: any, sig
 		grant_type: 'password',
 		client_id: oAuthClient.clientId,
 		client_secret: oAuthClient.clientSecret,
-
 		ca_code: caCode,
 		username: b64UserCI,
 		request_type: '1',
-		password_len: 10,
+		password_len: b64Password.length.toString(),
 		password: b64Password,
 		auth_type: '1',
 		consent_type: '1',
-		consent_len: 10,
+		consent_len: consent_list[0].consent_len.toString(),
 		consent: consent_list[0].consent,
-		signed_person_info_req_len: 10,
+		signed_person_info_req_len: b64PersonInfo.length.toString(),
 		signed_person_info_req: b64PersonInfo,
 		consent_nonce: generateNonce(),
 		ucpid_nonce: generateNonce(),
@@ -428,6 +422,66 @@ export const generateBodyIA002 = async (certTxId: string, consent_list: any, sig
 	};
 
 	return bodyIA002;
+};
+
+const getAccountsBasic = async (orgCode: string, accountNum: string, accessToken: string) => {
+	// Assumption: Mydata app is looking for api of the bank with orgCode to get the access token
+
+	const options = {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			'x-api-tran-id': generateTIN('AB001'),
+			'x-api-type': faker.helpers.arrayElement(['regular', 'irregular']),
+			Authorization: `Bearer ${accessToken}`,
+		},
+		body: JSON.stringify({
+			org_code: otherOrgCode,
+			account_num: accountNum,
+			next: '0',
+			search_timestamp: timestamp(new Date()),
+		}),
+	};
+
+	const response = await fetch(`${otherBankAPI}/api/v2/bank/accounts/deposit/basic`, options);
+
+	if (!response.ok) {
+		// Handle HTTP errors
+		throw new Error(`HTTP error! Status: ${response.status}`);
+	}
+
+	const data = await response.json();
+	return data;
+};
+
+const getAccountsDetail = async (orgCode: string, accountNum: string, accessToken: string) => {
+	// Assumption: Mydata app is looking for api of the bank with orgCode to get the access token
+
+	const options = {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			'x-api-tran-id': generateTIN('AD001'),
+			'x-api-type': faker.helpers.arrayElement(['regular', 'irregular']),
+			Authorization: `Bearer ${accessToken}`,
+		},
+		body: JSON.stringify({
+			org_code: otherOrgCode,
+			account_num: accountNum,
+			next: '0',
+			search_timestamp: timestamp(new Date()),
+		}),
+	};
+
+	const response = await fetch(`${otherBankAPI}/api/v2/bank/accounts/deposit/detail`, options);
+
+	if (!response.ok) {
+		// Handle HTTP errors
+		throw new Error(`HTTP error! Status: ${response.status}`);
+	}
+
+	const data = await response.json();
+	return data;
 };
 
 async function main() {
@@ -464,32 +518,56 @@ async function main() {
 
 	try {
 		const token = await getIA101();
-
 		const { access_token } = token;
 
-		const bodyIA102 = await generateBodyIA102();
-		console.log('Body generated for IA102:', bodyIA102);
+		if (!access_token) {
+			throw new Error('Error fetching access token in IA101');
+		}
+
+		// add delay to simulate user interaction
+		await new Promise((resolve) => setTimeout(resolve, 500));
+
+		// Get all the accounts that belong to the organization
+		const accounts = await prisma.account.findMany({
+			where: {
+				orgCode: orgCode,
+			},
+		});
+
+		if (!accounts) {
+			throw new Error('Error fetching accounts');
+		}
+
+		const account = faker.helpers.arrayElement(accounts);
+		const accountNum = account.accountNum;
+
+		const bodyIA102 = await generateBodyIA102(account);
 
 		const responseIA102 = await getIA102(access_token, bodyIA102);
-		console.log('Response from IA102:', responseIA102);
+		if (!responseIA102) {
+			throw new Error('Error sign request in IA102');
+		}
+
+		// add delay to simulate user interaction
+		await new Promise((resolve) => setTimeout(resolve, 500));
 
 		const bodyIA103: BodyIA103 = {
 			sign_tx_id: bodyIA102.sign_tx_id,
 			cert_tx_id: responseIA102.cert_tx_id,
 		};
 
-		console.log('Body generated for IA103:', bodyIA103);
-
 		const responseIA103 = await getIA103(access_token, bodyIA103);
-		console.log('Response from IA103:', responseIA103);
+		if (!responseIA103) {
+			throw new Error('Error sign result in IA103');
+		}
+
+		// add delay to simulate user interaction
+		await new Promise((resolve) => setTimeout(resolve, 500));
 
 		// After the integrated certification has been completed from Certification Authority, the response will
 		// be sent to the bank app (Information Provider) to complete the process
 		// this will provide access_token to allow access to the user's data
 		// Interaction 3: User wants to access their data from other banks
-
-		// add delay to simulate user interaction
-		await new Promise((resolve) => setTimeout(resolve, 2000));
 
 		const certTxId = responseIA102.certTxId;
 
@@ -499,16 +577,75 @@ async function main() {
 		const bodyIA002 = await generateBodyIA002(certTxId, consentList, signedConsentList);
 		const responseIA002 = await getIA002(bodyIA002);
 
-		console.log('Response from IA002:', responseIA002);
+		if (!responseIA002) {
+			throw new Error('Error request for access token in IA002');
+		}
+
+		// add delay to simulate user interaction
+		await new Promise((resolve) => setTimeout(resolve, 500));
+
+		// Interaction 4: User wants to view their accounts from other banks
+		// Assumptions: User has already connected their accounts to the Mydata app
+		// User can either view basic account information or detailed account information or both
+
+		const isGetBasic = faker.helpers.arrayElement([true, false]);
+		const isGetDetail = faker.helpers.arrayElement([true, false]);
+
+		if (isGetBasic) {
+			const accountsBasic = await getAccountsBasic(orgCode, accountNum, responseIA002.access_token);
+			if (!accountsBasic) {
+				throw new Error('Error fetching basic account information');
+			}
+
+			console.log('Accounts Basic:', accountsBasic);
+
+			// add delay to simulate user interaction
+			await new Promise((resolve) => setTimeout(resolve, 500));
+		}
+
+		if (isGetDetail) {
+			// Call for detailed account information
+			const accountsDetail = await getAccountsDetail(orgCode, accountNum, responseIA002.access_token);
+			if (!accountsDetail) {
+				throw new Error('Error fetching detailed account information');
+			}
+
+			console.log('Accounts Detail:', accountsDetail);
+
+			// add delay to simulate user interaction
+			await new Promise((resolve) => setTimeout(resolve, 500));
+		}
 	} catch (error) {
-		console.error('Error interaction 2:', error);
+		console.error('Error within interaction', error);
 		throw error;
 	}
 }
 
-main()
+async function runIterations() {
+	const iterations = 500; // Number of iterations
+	const delayBetweenIterations = 1000; // Delay between iterations in milliseconds (e.g., 1 second)
+
+	for (let i = 0; i < iterations; i++) {
+		console.log(`Starting iteration ${i + 1} of ${iterations}`);
+
+		try {
+			await main(); // Run the main function
+			console.log(`Iteration ${i + 1} completed successfully.`);
+		} catch (error) {
+			console.error(`Error in iteration ${i + 1}:`, error);
+		}
+
+		// Add a delay between iterations to avoid overwhelming the system
+		await new Promise((resolve) => setTimeout(resolve, delayBetweenIterations));
+	}
+
+	console.log('All iterations completed.');
+}
+
+// Run the iterations
+runIterations()
 	.catch((e) => {
-		console.error(e);
+		console.error('Error during iterations:', e);
 		process.exit(1);
 	})
 	.finally(async () => {
