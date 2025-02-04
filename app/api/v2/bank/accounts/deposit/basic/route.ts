@@ -2,22 +2,29 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { getResponseMessage } from '@/constants/responseMessages';
 import jwt from 'jsonwebtoken';
-import { initializeCsv, logRequestToCsv } from '@/utils/generateCSV';
+import { initializeCsv, logger } from '@/utils/generateCSV';
 
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secure-secret';
 
 export async function POST(req: NextRequest) {
-	await initializeCsv();
-
 	try {
 		const headers = req.headers;
 		const authorization = headers.get('Authorization');
 		const xApiTranId = headers.get('x-api-tran-id'); // e.g. 1234567890123456789012345
 		const xApiType = headers.get('x-api-type'); // e.g. regular / irregular
 
+		// Validate request body
+		const body = await req.json();
+		const { org_code, account_num, next, search_timestamp } = body;
+
 		if (!authorization || !authorization.startsWith('Bearer ')) {
-			await logRequestToCsv('bank.deposit', JSON.stringify(getResponseMessage('UNAUTHORIZED')));
+			await logger(
+				JSON.stringify(req),
+				JSON.stringify(body),
+				JSON.stringify(getResponseMessage('UNAUTHORIZED')),
+				'401'
+			);
 			return NextResponse.json(getResponseMessage('UNAUTHORIZED'), { status: 401 });
 		}
 
@@ -28,29 +35,35 @@ export async function POST(req: NextRequest) {
 		try {
 			decodedToken = jwt.verify(token, JWT_SECRET);
 		} catch (error) {
-			await logRequestToCsv('bank.deposit', JSON.stringify(getResponseMessage('INVALID_TOKEN')));
+			await logger(
+				JSON.stringify(req),
+				JSON.stringify(body),
+				JSON.stringify(getResponseMessage('INVALID_TOKEN')),
+				'403'
+			);
 			return NextResponse.json(getResponseMessage('INVALID_TOKEN'), { status: 403 });
 		}
 
 		// Validate x-api-tran-id
 		if (!xApiTranId || xApiTranId.length > 25) {
-			await logRequestToCsv('bank.deposit', JSON.stringify(getResponseMessage('INVALID_API_TRAN_ID')));
+			await logger(
+				JSON.stringify(req),
+				JSON.stringify(body),
+				JSON.stringify(getResponseMessage('INVALID_API_TRAN_ID')),
+				'400'
+			);
 			return NextResponse.json(getResponseMessage('INVALID_API_TRAN_ID'), { status: 400 });
 		}
 
 		if (!xApiType || (xApiType !== 'regular' && xApiType !== 'irregular')) {
-			await logRequestToCsv('bank.deposit', JSON.stringify(getResponseMessage('INVALID_API_TYPE')));
+			await logger(
+				JSON.stringify(req),
+				JSON.stringify(body),
+				JSON.stringify(getResponseMessage('INVALID_API_TYPE')),
+				'400'
+			);
 			return NextResponse.json(getResponseMessage('INVALID_API_TYPE'), { status: 400 });
 		}
-
-		// Validate request body
-		const body = await req.json();
-		const { org_code, account_num, next, search_timestamp } = body;
-
-		console.log('next: ', next);
-		console.log('search_timestamp: ', search_timestamp);
-		console.log('org_code: ', org_code);
-		console.log('account_num: ', account_num);
 
 		const accounts = await prisma.account.findUnique({
 			where: {
@@ -59,7 +72,12 @@ export async function POST(req: NextRequest) {
 		});
 
 		if (!accounts) {
-			await logRequestToCsv('bank.deposit', JSON.stringify(getResponseMessage('SUCCESS_WITH_NO_DATA')));
+			await logger(
+				JSON.stringify(req),
+				JSON.stringify(body),
+				JSON.stringify(getResponseMessage('SUCCESS_WITH_NO_DATA')),
+				'200'
+			);
 			return NextResponse.json(getResponseMessage('SUCCESS_WITH_NO_DATA'), { status: 200 });
 		}
 
@@ -70,7 +88,12 @@ export async function POST(req: NextRequest) {
 		});
 
 		if (depositAccounts.length === 0) {
-			await logRequestToCsv('bank.deposit', JSON.stringify(getResponseMessage('SUCCESS_WITH_NO_DATA')));
+			await logger(
+				JSON.stringify(req),
+				JSON.stringify(body),
+				JSON.stringify(getResponseMessage('SUCCESS_WITH_NO_DATA')),
+				'200'
+			);
 			return NextResponse.json(getResponseMessage('SUCCESS_WITH_NO_DATA'), { status: 200 });
 		}
 
@@ -94,11 +117,13 @@ export async function POST(req: NextRequest) {
 			basicList: basicList,
 		};
 
-		await logRequestToCsv('bank.deposit', JSON.stringify(responseData));
+		await logger(JSON.stringify(req), JSON.stringify(body), JSON.stringify(responseData), '200');
 
 		return NextResponse.json(responseData, { status: 200 });
 	} catch (error) {
-		await logRequestToCsv('bank.deposit', JSON.stringify(getResponseMessage('INTERNAL_SERVER_ERROR')));
+		const body = await req.json();
+
+		await logger(JSON.stringify(req), JSON.stringify(body), JSON.stringify(error), '400');
 		return NextResponse.json(getResponseMessage('INTERNAL_SERVER_ERROR'), { status: 400 });
 	}
 }

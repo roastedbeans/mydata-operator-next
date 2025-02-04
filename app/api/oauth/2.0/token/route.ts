@@ -2,228 +2,123 @@ import { NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { getResponseMessage } from '@/constants/responseMessages';
-import { initializeCsv, logRequestToCsv } from '@/utils/generateCSV';
+import { logger } from '@/utils/generateCSV';
 
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secure-secret'; // Replace with your secure environment variable
+const JWT_SECRET: string = process.env.JWT_SECRET || 'your-secure-secret';
 
-export async function POST(req: Request) {
-	await initializeCsv();
+interface RequestBody {
+	tx_id: string;
+	org_code: string;
+	grant_type: string;
+	client_id: string;
+	client_secret: string;
+	ca_code: string;
+	username: string;
+	request_type: string;
+	password_len: string;
+	password: string;
+	auth_type: string;
+	consent_type: string;
+	consent_len: string;
+	consent: string;
+	signed_person_info_req_len: string;
+	signed_person_info_req: string;
+	consent_nonce: string;
+	ucpid_nonce: string;
+	cert_tx_id: string;
+	service_id: string;
+}
 
+export async function POST(req: Request): Promise<NextResponse> {
 	try {
-		// Parse and validate headers
 		const headers = req.headers;
 		const xApiTranId = headers.get('x-api-tran-id');
+		const body: FormData = await req.formData();
+		const jsonBody: RequestBody = Object.fromEntries(body) as unknown as RequestBody;
 
 		if (!xApiTranId || xApiTranId.length > 25) {
-			return NextResponse.json(getResponseMessage('INVALID_API_TRAN_ID'), { status: 400 });
+			return respondWithError(req, jsonBody, 'INVALID_API_TRAN_ID', 400);
 		}
 
-		// Parse body
-		const body = await req.formData();
-		const txId = body.get('tx_id');
-		const orgCode = body.get('org_code');
-		const grantType = body.get('grant_type');
-		const clientId = body.get('client_id');
-		const clientSecret = body.get('client_secret');
-		const caCode = body.get('ca_code');
-		const username = body.get('username');
-		const requestType = body.get('request_type');
-		const passwordLen = body.get('password_len');
-		const password = body.get('password');
-		const authType = body.get('auth_type');
-		const consentType = body.get('consent_type');
-		const consentLen = body.get('consent_len');
-		const consent = body.get('consent');
-		const signedPersonInfoReqLen = body.get('signed_person_info_req_len');
-		const signedPersonInfoReq = body.get('signed_person_info_req');
-		const consentNonce = body.get('consent_nonce');
-		const ucpidNonce = body.get('ucpid_nonce');
-		const certTxId = body.get('cert_tx_id');
-		const serviceId = body.get('service_id');
-
-		// Validate body parameters
-		if (grantType !== 'password' || !clientId || !clientSecret) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
+		if (jsonBody.grant_type !== 'password' || !jsonBody.client_id || !jsonBody.client_secret) {
+			return respondWithError(req, jsonBody, 'INVALID_PARAMETERS', 400);
 		}
 
-		// Authenticate client using Supabase via Prisma
-		const client = await prisma.oAuthClient.findUnique({
-			where: { clientId: clientId as string },
-		});
-
-		if (!client || client.clientSecret !== clientSecret) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 401 });
+		const client = await prisma.oAuthClient.findUnique({ where: { clientId: jsonBody.client_id } });
+		if (!client || client.clientSecret !== jsonBody.client_secret) {
+			return respondWithError(req, jsonBody, 'UNAUTHORIZED', 401);
 		}
 
-		if (
-			!txId ||
-			!orgCode ||
-			!caCode ||
-			!username ||
-			!requestType ||
-			!passwordLen ||
-			!password ||
-			!authType ||
-			!consentType ||
-			!consentLen ||
-			!consent ||
-			!signedPersonInfoReqLen ||
-			!signedPersonInfoReq ||
-			!consentNonce ||
-			!ucpidNonce ||
-			!certTxId ||
-			!serviceId
-		) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
+		if (!isValidRequest(jsonBody)) {
+			return respondWithError(req, jsonBody, 'INVALID_PARAMETERS', 400);
 		}
 
-		if ((txId as string).length > 74) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((orgCode as string).length > 10) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((grantType as string) != 'password') {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((caCode as string).length > 10) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((username as string).length > 100) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((requestType as string) !== '0' && (requestType as string) !== '1') {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((passwordLen as string).length > 5) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((password as string).length > 10000) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((authType as string) !== '0' && (authType as string) !== '1') {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((consentType as string) !== '0' && (consentType as string) !== '1') {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((consentLen as string).length > 5) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((consent as string).length > 7000) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((signedPersonInfoReqLen as string).length > 5) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((signedPersonInfoReq as string).length > 1000) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((consentNonce as string).length > 30) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((ucpidNonce as string).length > 30) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((certTxId as string).length > 40) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		if ((serviceId as string).length > 22) {
-			await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INVALID_PARAMETERS')));
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
-		}
-
-		// Generate JWT token
-		const accessToken = generateAccessToken(clientId as string, 'ip');
-
-		const refreshToken = generateRefreshToken(clientId as string, 'ip');
+		const accessToken = generateToken(jsonBody.client_id, 'ip', 3600);
+		const refreshToken = generateToken(jsonBody.client_id, 'ip', 86400);
 
 		const responseData = {
 			rsp_code: getResponseMessage('SUCCESS').code,
 			rsp_msg: getResponseMessage('SUCCESS').message,
-			tx_id: txId,
+			tx_id: jsonBody.tx_id,
 			token_type: 'Bearer',
-			access_token: accessToken, // access token
-			expires_in: 3600, // token expiry in seconds (1 hour)
-			refresh_token: refreshToken, // refresh token
-			refresh_token_expires_in: 86400, // refresh token expiry in seconds (1 day)
-
-			// timestamp: timestamp(new Date()),
+			access_token: accessToken,
+			expires_in: 3600,
+			refresh_token: refreshToken,
+			refresh_token_expires_in: 86400,
 		};
 
-		await logRequestToCsv('bank.ca', JSON.stringify(responseData));
-
+		await logger(JSON.stringify(req), JSON.stringify(jsonBody), JSON.stringify(responseData), '200');
 		return NextResponse.json(responseData, { status: 200 });
 	} catch (error) {
-		await logRequestToCsv('bank.ca', JSON.stringify(getResponseMessage('INTERNAL_SERVER_ERROR')));
 		console.error('Error in token generation:', error);
-		return NextResponse.json(getResponseMessage('INTERNAL_SERVER_ERROR'), { status: 500 });
+		return respondWithError(req, {}, 'INTERNAL_SERVER_ERROR', 500);
 	} finally {
 		await prisma.$disconnect();
 	}
 }
 
-// JWT Token generation function
-function generateAccessToken(clientId: string, scope: string): string {
-	// Generate the JWT payload
+function generateToken(clientId: string, scope: string, expiresIn: number): string {
 	const payload = {
-		iss: process.env.PUBLIC_NEXT_ORG_CODE, // Issuer: Institution code
-		aud: clientId, // Audience: Replace with appropriate institution code
-		jti: crypto.randomUUID(), // Unique token identifier
-		exp: Math.floor(Date.now() / 1000) + 3600, // Expiry time (1 hour from now)
-		scope: scope, // Scope of access
+		iss: process.env.PUBLIC_NEXT_ORG_CODE,
+		aud: clientId,
+		jti: crypto.randomUUID(),
+		exp: Math.floor(Date.now() / 1000) + expiresIn,
+		scope,
 	};
-
 	return jwt.sign(payload, JWT_SECRET);
 }
 
-function generateRefreshToken(clientId: string, scope: string): string {
-	// Generate the JWT payload
-	const payload = {
-		iss: process.env.PUBLIC_NEXT_ORG_CODE, // Issuer: Institution code
-		aud: clientId, // Audience: Replace with appropriate institution code
-		jti: crypto.randomUUID(), // Unique token identifier
-		exp: Math.floor(Date.now() / 1000) + 86400, // Expiry time (1 day from now)
-		scope: scope, // Scope of access
-	};
+function isValidRequest(body: RequestBody): boolean {
+	return (
+		body.tx_id.length <= 74 &&
+		body.org_code.length <= 10 &&
+		body.grant_type === 'password' &&
+		body.ca_code.length <= 10 &&
+		body.username.length <= 100 &&
+		['0', '1'].includes(body.request_type) &&
+		body.password_len.length <= 5 &&
+		body.password.length <= 10000 &&
+		['0', '1'].includes(body.auth_type) &&
+		['0', '1'].includes(body.consent_type) &&
+		body.consent_len.length <= 5 &&
+		body.consent.length <= 7000 &&
+		body.signed_person_info_req_len.length <= 5 &&
+		body.signed_person_info_req.length <= 1000 &&
+		body.consent_nonce.length <= 30 &&
+		body.ucpid_nonce.length <= 30 &&
+		body.cert_tx_id.length <= 40 &&
+		body.service_id.length <= 22
+	);
+}
 
-	return jwt.sign(payload, JWT_SECRET);
+async function respondWithError(
+	req: Request,
+	body: Partial<RequestBody>,
+	errorCode: any,
+	statusCode: number
+): Promise<NextResponse> {
+	const errorResponse = getResponseMessage(errorCode);
+	await logger(JSON.stringify(req), JSON.stringify(body), JSON.stringify(errorResponse), statusCode.toString());
+	return NextResponse.json(errorResponse, { status: statusCode });
 }
