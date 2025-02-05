@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { getResponseMessage } from '@/constants/responseMessages';
@@ -30,37 +30,68 @@ interface RequestBody {
 	service_id: string;
 }
 
-export async function POST(req: Request): Promise<NextResponse> {
+export async function POST(req: NextRequest): Promise<NextResponse> {
+	const headers = req.headers;
+	const headersList = Object.fromEntries(headers.entries());
+	const authorization = headers.get('Authorization');
+	const xApiTranId = headers.get('x-api-tran-id');
+	const method = req.method;
+	const url = req.nextUrl.toString();
+	const query = Object.fromEntries(req.nextUrl.searchParams);
+
+	const reqBody = await req.formData();
+	const body: RequestBody = Object.fromEntries(reqBody) as unknown as RequestBody;
+
+	const request = {
+		method,
+		url,
+		query,
+		headers: headersList,
+	};
+
 	try {
-		const headers = req.headers;
-		const xApiTranId = headers.get('x-api-tran-id');
-		const body: FormData = await req.formData();
-		const jsonBody: RequestBody = Object.fromEntries(body) as unknown as RequestBody;
-
 		if (!xApiTranId || xApiTranId.length > 25) {
-			return respondWithError(req, jsonBody, 'INVALID_API_TRAN_ID', 400);
+			await logger(
+				JSON.stringify(request),
+				JSON.stringify(body),
+				JSON.stringify(getResponseMessage('INVALID_PARAMETERS')),
+				'400'
+			);
+			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
 		}
 
-		if (jsonBody.grant_type !== 'password' || !jsonBody.client_id || !jsonBody.client_secret) {
-			return respondWithError(req, jsonBody, 'INVALID_PARAMETERS', 400);
+		if (body.grant_type !== 'password' || !body.client_id || !body.client_secret) {
+			await logger(
+				JSON.stringify(request),
+				JSON.stringify(body),
+				JSON.stringify(getResponseMessage('INVALID_PARAMETERS')),
+				'400'
+			);
+			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
 		}
 
-		const client = await prisma.oAuthClient.findUnique({ where: { clientId: jsonBody.client_id } });
-		if (!client || client.clientSecret !== jsonBody.client_secret) {
-			return respondWithError(req, jsonBody, 'UNAUTHORIZED', 401);
+		const client = await prisma.oAuthClient.findUnique({ where: { clientId: body.client_id } });
+		if (!client || client.clientSecret !== body.client_secret) {
+			await logger(
+				JSON.stringify(request),
+				JSON.stringify(body),
+				JSON.stringify(getResponseMessage('INVALID_PARAMETERS')),
+				'401'
+			);
+			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 401 });
 		}
 
-		if (!isValidRequest(jsonBody)) {
-			return respondWithError(req, jsonBody, 'INVALID_PARAMETERS', 400);
+		if (!isValidRequest(body)) {
+			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 401 });
 		}
 
-		const accessToken = generateToken(jsonBody.client_id, 'ip', 3600);
-		const refreshToken = generateToken(jsonBody.client_id, 'ip', 86400);
+		const accessToken = generateToken(body.client_id, 'ip', 3600);
+		const refreshToken = generateToken(body.client_id, 'ip', 86400);
 
 		const responseData = {
 			rsp_code: getResponseMessage('SUCCESS').code,
 			rsp_msg: getResponseMessage('SUCCESS').message,
-			tx_id: jsonBody.tx_id,
+			tx_id: body.tx_id,
 			token_type: 'Bearer',
 			access_token: accessToken,
 			expires_in: 3600,
@@ -68,11 +99,12 @@ export async function POST(req: Request): Promise<NextResponse> {
 			refresh_token_expires_in: 86400,
 		};
 
-		await logger(JSON.stringify(req), JSON.stringify(jsonBody), JSON.stringify(responseData), '200');
+		await logger(JSON.stringify(request), JSON.stringify(body), JSON.stringify(responseData), '200');
 		return NextResponse.json(responseData, { status: 200 });
 	} catch (error) {
 		console.error('Error in token generation:', error);
-		return respondWithError(req, {}, 'INTERNAL_SERVER_ERROR', 500);
+		await logger(JSON.stringify(request), JSON.stringify(body), JSON.stringify(error), '500');
+		return NextResponse.json(getResponseMessage('INVALID_API_TRAN_ID'), { status: 400 });
 	} finally {
 		await prisma.$disconnect();
 	}
@@ -110,15 +142,4 @@ function isValidRequest(body: RequestBody): boolean {
 		body.cert_tx_id.length <= 40 &&
 		body.service_id.length <= 22
 	);
-}
-
-async function respondWithError(
-	req: Request,
-	body: Partial<RequestBody>,
-	errorCode: any,
-	statusCode: number
-): Promise<NextResponse> {
-	const errorResponse = getResponseMessage(errorCode);
-	await logger(JSON.stringify(req), JSON.stringify(body), JSON.stringify(errorResponse), statusCode.toString());
-	return NextResponse.json(errorResponse, { status: statusCode });
 }

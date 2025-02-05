@@ -2,25 +2,35 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { getResponseMessage } from '@/constants/responseMessages';
 import jwt from 'jsonwebtoken';
-import { initializeCsv, logger } from '@/utils/generateCSV';
+import { logger } from '@/utils/generateCSV';
 
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secure-secret';
 
 export async function POST(req: NextRequest) {
+	const headers = req.headers;
+	const headersList = Object.fromEntries(headers.entries());
+	const authorization = headers.get('Authorization');
+	const xApiTranId = headers.get('x-api-tran-id');
+	const xApiType = headers.get('x-api-type');
+	const method = req.method;
+	const url = req.nextUrl.toString();
+	const query = Object.fromEntries(req.nextUrl.searchParams);
+
+	const body = await req.json();
+	const { org_code, account_num, next, search_timestamp } = body;
+
+	const request = {
+		method,
+		url,
+		query,
+		headers: headersList,
+	};
+
 	try {
-		const headers = req.headers;
-		const authorization = headers.get('Authorization');
-		const xApiTranId = headers.get('x-api-tran-id'); // e.g. 1234567890123456789012345
-		const xApiType = headers.get('x-api-type'); // e.g. regular / irregular
-
-		// Validate request body
-		const body = await req.json();
-		const { org_code, account_num, next, search_timestamp } = body;
-
-		if (!authorization || !authorization.startsWith('Bearer ')) {
+		if (!authorization?.startsWith('Bearer ')) {
 			await logger(
-				JSON.stringify(req),
+				JSON.stringify(request),
 				JSON.stringify(body),
 				JSON.stringify(getResponseMessage('UNAUTHORIZED')),
 				'401'
@@ -36,7 +46,7 @@ export async function POST(req: NextRequest) {
 			decodedToken = jwt.verify(token, JWT_SECRET);
 		} catch (error) {
 			await logger(
-				JSON.stringify(req),
+				JSON.stringify(request),
 				JSON.stringify(body),
 				JSON.stringify(getResponseMessage('INVALID_TOKEN')),
 				'403'
@@ -47,7 +57,7 @@ export async function POST(req: NextRequest) {
 		// Validate x-api-tran-id
 		if (!xApiTranId || xApiTranId.length > 25) {
 			await logger(
-				JSON.stringify(req),
+				JSON.stringify(request),
 				JSON.stringify(body),
 				JSON.stringify(getResponseMessage('INVALID_API_TRAN_ID')),
 				'400'
@@ -57,7 +67,7 @@ export async function POST(req: NextRequest) {
 
 		if (!xApiType || (xApiType !== 'regular' && xApiType !== 'irregular')) {
 			await logger(
-				JSON.stringify(req),
+				JSON.stringify(request),
 				JSON.stringify(body),
 				JSON.stringify(getResponseMessage('INVALID_API_TYPE')),
 				'400'
@@ -73,7 +83,7 @@ export async function POST(req: NextRequest) {
 
 		if (!accounts) {
 			await logger(
-				JSON.stringify(req),
+				JSON.stringify(request),
 				JSON.stringify(body),
 				JSON.stringify(getResponseMessage('SUCCESS_WITH_NO_DATA')),
 				'200'
@@ -89,7 +99,7 @@ export async function POST(req: NextRequest) {
 
 		if (depositAccounts.length === 0) {
 			await logger(
-				JSON.stringify(req),
+				JSON.stringify(request),
 				JSON.stringify(body),
 				JSON.stringify(getResponseMessage('SUCCESS_WITH_NO_DATA')),
 				'200'
@@ -117,13 +127,11 @@ export async function POST(req: NextRequest) {
 			basicList: basicList,
 		};
 
-		await logger(JSON.stringify(req), JSON.stringify(body), JSON.stringify(responseData), '200');
+		await logger(JSON.stringify(request), JSON.stringify(body), JSON.stringify(responseData), '200');
 
 		return NextResponse.json(responseData, { status: 200 });
 	} catch (error) {
-		const body = await req.json();
-
-		await logger(JSON.stringify(req), JSON.stringify(body), JSON.stringify(error), '400');
+		await logger(JSON.stringify(request), JSON.stringify(body), JSON.stringify(error), '400');
 		return NextResponse.json(getResponseMessage('INTERNAL_SERVER_ERROR'), { status: 400 });
 	}
 }

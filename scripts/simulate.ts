@@ -58,9 +58,11 @@ export type SignedConsent = {
 };
 
 const prisma = new PrismaClient();
-const otherBankAPI = process.env.OTHER_BANK_API || '';
-const orgCode = process.env.NEXT_PUBLIC_ORG_CODE || '';
-const otherOrgCode = process.env.OTHER_ORG_CODE || '';
+const otherBankAPI = 'http://localhost:4000';
+const orgCode = 'ORG2025002';
+const otherOrgCode = 'ORG2025001';
+const clientId = 'ORG2025002-CLIENT-ID';
+const clientSecret = 'ORG2025002-CLIENT-SECRET';
 
 export const generateTIN = (prefix: string) => {
 	const date = new Date();
@@ -92,8 +94,8 @@ export const getIA101 = async () => {
 			},
 			body: new URLSearchParams({
 				grant_type: 'client_credential',
-				client_id: process.env.NEXT_PUBLIC_CLIENT_ID || '',
-				client_secret: process.env.NEXT_PUBLIC_CLIENT_SECRET || '',
+				client_id: clientId,
+				client_secret: clientSecret,
 				scope: 'ca',
 			}),
 		};
@@ -195,8 +197,8 @@ export async function getSupport001() {
 			},
 			body: new URLSearchParams({
 				grant_type: 'client_credential',
-				client_id: process.env.NEXT_PUBLIC_CLIENT_ID || '',
-				client_secret: process.env.NEXT_PUBLIC_CLIENT_SECRET || '',
+				client_id: clientId,
+				client_secret: clientSecret,
 				scope: 'manage',
 			}),
 		};
@@ -602,12 +604,13 @@ async function main() {
 }
 
 async function runIterations() {
-	const iterations = 500; // Number of iterations
+	const iterations = 100; // Number of iterations
 	const delayBetweenIterations = 1000; // Delay between iterations in milliseconds (e.g., 1 second)
 
 	for (let i = 0; i < iterations; i++) {
 		try {
 			await main(); // Run the main function
+			console.log(`Iteration ${i + 1} completed.`);
 		} catch (error) {
 			console.error(`Error in iteration ${i + 1}:`, error);
 		}
