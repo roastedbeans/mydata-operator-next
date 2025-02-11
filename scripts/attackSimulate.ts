@@ -230,6 +230,7 @@ async function simulateAttacks() {
 
 		const { access_token } = await tokenResponse.json();
 
+		// Attack simulation for IA102
 		// Test IA102 with malicious payloads
 		const maliciousBodyIA102 = await generateMaliciousBodyIA102();
 		const ia102Response = await fetch('http://localhost:3000/api/ca/sign_request', {
