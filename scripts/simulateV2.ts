@@ -2,6 +2,41 @@ import { PrismaClient } from '@prisma/client';
 import { faker } from '@faker-js/faker';
 import dayjs from 'dayjs';
 
+// Logger utility
+const logger = {
+	error: (message: string, error?: any) => {
+		console.error(`[ERROR] ${message}`, error);
+	},
+	warn: (message: string) => {
+		console.warn(`[WARN] ${message}`);
+	},
+	info: (message: string) => {
+		console.info(`[INFO] ${message}`);
+	},
+};
+
+// Custom error classes
+class ValidationError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'ValidationError';
+	}
+}
+
+class APIError extends Error {
+	statusCode: number;
+	errorCode: string;
+	originalError: any;
+
+	constructor(message: string, statusCode: number, errorCode: string, originalError?: any) {
+		super(message);
+		this.name = 'APIError';
+		this.statusCode = statusCode;
+		this.errorCode = errorCode;
+		this.originalError = originalError;
+	}
+}
+
 // Define types
 export type BodyIA102 = {
 	sign_tx_id: string;
@@ -60,10 +95,41 @@ export type SignedConsent = {
 
 const prisma = new PrismaClient();
 const otherBankAPI = 'http://localhost:4000';
-const orgCode = 'ORG2025002';
-const otherOrgCode = 'ORG2025001';
-const clientId = 'ORG2025002-CLIENT-ID';
-const clientSecret = 'ORG2025002-CLIENT-SECRET';
+const otherOrgCode = 'anya123456';
+const orgCode = 'bond123456';
+const clientId = 'bond123456clientid';
+const clientSecret = 'bond123456clientsecret';
+
+// OTHER_BANK_API = 'http://localhost:4000';
+// OTHER_ORG_CODE = 'anya123456';
+
+// NEXT_PUBLIC_ORG_NAME = 'Bond Bank';
+// NEXT_PUBLIC_SERIAL_CODE = 'bond123456';
+// NEXT_PUBLIC_ORG_CODE = 'bond123456';
+// NEXT_PUBLIC_CLIENT_ID = 'bond123456clientid';
+// NEXT_PUBLIC_CLIENT_SECRET = 'bond123456clientsecret';
+
+// Validation functions
+const validateBodyIA102 = (body: BodyIA102): void => {
+	if (!body.sign_tx_id) throw new ValidationError('sign_tx_id is required');
+	if (!body.user_ci) throw new ValidationError('user_ci is required');
+	if (!body.real_name) throw new ValidationError('real_name is required');
+	if (!body.phone_num) throw new ValidationError('phone_num is required');
+	if (!Array.isArray(body.consent_list)) throw new ValidationError('consent_list must be an array');
+	if (body.consent_list.length === 0) throw new ValidationError('consent_list cannot be empty');
+};
+
+const validateBodyIA103 = (body: BodyIA103): void => {
+	if (!body.cert_tx_id) throw new ValidationError('cert_tx_id is required');
+	if (!body.sign_tx_id) throw new ValidationError('sign_tx_id is required');
+};
+
+const validateBodyIA002 = (body: BodyIA002): void => {
+	if (!body.tx_id) throw new ValidationError('tx_id is required');
+	if (!body.org_code) throw new ValidationError('org_code is required');
+	if (!body.client_id) throw new ValidationError('client_id is required');
+	if (!body.client_secret) throw new ValidationError('client_secret is required');
+};
 
 // Attack configuration interface
 interface AttackConfiguration {
@@ -72,503 +138,667 @@ interface AttackConfiguration {
 	location: string;
 }
 
-// Generate malicious content
+// Generate malicious content with error handling
 const generateMaliciousContent = (): AttackConfiguration | null => {
-	const attackConfigurations = [
-		// XSS attacks
-		...['User-Agent', 'X-CSRF-Token', 'Cookie', 'Set-Cookie'].map((location) => ({
-			type: 'XSS',
-			payload: faker.helpers.arrayElement([
-				'<script>alert("XSS")</script>',
-				'<img src="x" onerror="alert(\'XSS\')">',
-				'"><script>alert(document.cookie)</script>',
-			]),
-			location,
-		})),
+	try {
+		const attackConfigurations = [
+			// XSS attacks
+			...['User-Agent', 'X-CSRF-Token', 'Cookie', 'Set-Cookie'].map((location) => ({
+				type: 'XSS',
+				payload: faker.helpers.arrayElement([
+					'<script>alert("XSS")</script>',
+					'<img src="x" onerror="alert(\'XSS\')">',
+					'"><script>alert(document.cookie)</script>',
+				]),
+				location,
+			})),
 
-		// SQLi attacks
-		...['client_secret', 'grant_type', 'password', 'timestamp'].map((location) => ({
-			type: 'SQLi',
-			payload: faker.helpers.arrayElement(["' OR '1'='1", "'; DROP TABLE users--", "' UNION SELECT * FROM accounts--"]),
-			location,
-		})),
+			// SQLi attacks
+			...['client_secret', 'grant_type', 'password', 'timestamp'].map((location) => ({
+				type: 'SQLi',
+				payload: faker.helpers.arrayElement([
+					"' OR '1'='1",
+					"'; DROP TABLE users--",
+					"' UNION SELECT * FROM accounts--",
+				]),
+				location,
+			})),
 
-		// Cookie manipulation
-		...['Cookie', 'Set-Cookie'].map((location) => ({
-			type: 'CookieInjection',
-			payload: faker.helpers.arrayElement(['session=admin123; Path=/', 'isAdmin=true; HttpOnly']),
-			location,
-		})),
-	];
+			// Cookie manipulation
+			...['Cookie', 'Set-Cookie'].map((location) => ({
+				type: 'CookieInjection',
+				payload: faker.helpers.arrayElement(['session=admin123; Path=/', 'isAdmin=true; HttpOnly']),
+				location,
+			})),
+		];
 
-	const shouldAttack = faker.datatype.boolean(0.3); // 30% attack chance
-	if (!shouldAttack) return null;
-
-	return faker.helpers.arrayElement(attackConfigurations);
-};
-
-// Process payload with attack handling
-const processPayload = (value: any, attack: AttackConfiguration | null, location: string): string => {
-	if (attack && attack.location === location) {
-		return attack.payload; // Bypass normal processing for attacks
+		const shouldAttack = faker.datatype.boolean(0.3); // 30% attack chance
+		return shouldAttack ? faker.helpers.arrayElement(attackConfigurations) : null;
+	} catch (error) {
+		logger.error('Error generating malicious content', error);
+		return null;
 	}
-	return faker.datatype.boolean(0.98) ? value : '';
 };
 
-// Generate transaction ID
-export const generateTIN = (prefix: string) => {
-	const date = new Date();
-	const timestamp = date
-		.toISOString()
-		.replace(/[-:.TZ]/g, '')
-		.slice(0, 14); // YYYYMMDDHHMMSS
-	return prefix + timestamp;
+// Process payload with error handling
+const processPayload = (value: any, attack: AttackConfiguration | null, location: string): string => {
+	try {
+		if (attack && attack.location === location) {
+			return attack.payload;
+		}
+		return faker.datatype.boolean(0.98) ? value : '';
+	} catch (error) {
+		logger.error('Error processing payload', error);
+		return value;
+	}
 };
 
-// Generate timestamp
+// Generate transaction ID with error handling
+export const generateTIN = (prefix: string): string => {
+	try {
+		const date = new Date();
+		return (
+			prefix +
+			date
+				.toISOString()
+				.replace(/[-:.TZ]/g, '')
+				.slice(0, 14)
+		);
+	} catch (error) {
+		logger.error('Error generating TIN', error);
+		return `${prefix}${Date.now()}`;
+	}
+};
+
+// Generate timestamp with error handling
 export function timestamp(date: Date): string {
-	return date
-		.toISOString()
-		.replace(/[-:.TZ]/g, '')
-		.slice(0, 14); // YYYYMMDDHHMMSS
+	try {
+		return date
+			.toISOString()
+			.replace(/[-:.TZ]/g, '')
+			.slice(0, 14);
+	} catch (error) {
+		logger.error('Error generating timestamp', error);
+		return Date.now().toString();
+	}
 }
 
-// Generate BodyIA102
+// Utility function for API calls
+async function makeAPICall<T>(url: string, options: RequestInit, errorPrefix: string): Promise<T> {
+	try {
+		const response = await fetch(url, options);
+
+		if (!response.ok) {
+			throw new APIError(`${errorPrefix} failed`, response.status, response.statusText, await response.text());
+		}
+
+		return await response.json();
+	} catch (error) {
+		if (error instanceof APIError) {
+			throw error;
+		}
+		throw new APIError(`${errorPrefix} failed`, 500, 'INTERNAL_ERROR', error);
+	}
+}
+
+// Generate BodyIA102 with error handling
 export const generateBodyIA102 = async (account: any): Promise<BodyIA102> => {
-	const caCode = faker.helpers.arrayElement(['CA20250001']);
-	const newTimestamp = timestamp(new Date());
-	const serialNum = faker.helpers.arrayElement(['BASA20240204', 'BABB20230106']);
+	try {
+		if (!account) throw new ValidationError('Account is required');
 
-	const signTxId = `${orgCode}_${caCode}_${newTimestamp}_${serialNum}`;
-	const firstName = account.firstName;
-	const lastName = account.lastName;
-	const b64UserCI = Buffer.from(account.pinCode).toString('base64');
-	const fullName = `${firstName} ${lastName}`;
-	const phoneNum = account.phoneNumber;
+		const caCode = faker.helpers.arrayElement(['CA20250001']);
+		const newTimestamp = timestamp(new Date());
+		const serialNum = faker.helpers.arrayElement(['BASA20240204', 'BABB20230106']);
 
-	const requestTitle = faker.helpers.arrayElement([
-		'Request for Consent to Use Personal Information',
-		'Request for Consent to Use Personal Information for Marketing',
-		'Request for Consent to Use Personal Information for Research',
-	]);
+		const signTxId = `${orgCode}_${caCode}_${newTimestamp}_${serialNum}`;
+		const firstName = account.firstName;
+		const lastName = account.lastName;
 
-	const deviceCode = faker.helpers.arrayElement(['PC', 'MO', 'TB']);
-	const relayAgencyCode = faker.helpers.arrayElement(['RA20250001', 'RA20250002', 'RA20250003']);
+		if (!account.pinCode) throw new ValidationError('Account PIN code is required');
+		const b64UserCI = Buffer.from(account.pinCode).toString('base64');
 
-	const consentTitles = [
-		'Consent Request for Transmission',
-		'Consent to Collection and Use of Personal Information',
-		'Consent to Provide Personal Information',
-	];
+		const fullName = `${firstName} ${lastName}`;
+		const phoneNum = account.phoneNumber;
 
-	const consentValues = ['consent-001', 'consent-002', 'consent-003'];
-	const numConsents = faker.number.int({ min: 1, max: 3 });
+		const requestTitle = faker.helpers.arrayElement([
+			'Request for Consent to Use Personal Information',
+			'Request for Consent to Use Personal Information for Marketing',
+			'Request for Consent to Use Personal Information for Research',
+		]);
 
-	const consent_list = Array.from({ length: numConsents }, (_, index) => {
-		const consent = faker.helpers.arrayElement(consentValues);
-		const shaConsent = Buffer.from(consent).toString('base64');
-		const txId = `MD_${orgCode}_${otherOrgCode}_${relayAgencyCode}_${caCode}_${newTimestamp}_${'XXAB0049000' + index}`;
+		const deviceCode = faker.helpers.arrayElement(['PC', 'MO', 'TB']);
+		const relayAgencyCode = faker.helpers.arrayElement(['RA20250001', 'RA20250002', 'RA20250003']);
 
-		return {
-			tx_id: txId,
-			consent_title: consentTitles[index],
-			consent: shaConsent,
-			consent_len: shaConsent.length,
+		const consentTitles = [
+			'Consent Request for Transmission',
+			'Consent to Collection and Use of Personal Information',
+			'Consent to Provide Personal Information',
+		];
+
+		const consentValues = ['consent-001', 'consent-002', 'consent-003'];
+		const numConsents = faker.number.int({ min: 1, max: 3 });
+
+		const consent_list = Array.from({ length: numConsents }, (_, index) => {
+			const consent = faker.helpers.arrayElement(consentValues);
+			const shaConsent = Buffer.from(consent).toString('base64');
+			const txId = `MD_${orgCode}_${otherOrgCode}_${relayAgencyCode}_${caCode}_${newTimestamp}_${
+				'XXAB0049000' + index
+			}`;
+
+			return {
+				tx_id: txId,
+				consent_title: consentTitles[index],
+				consent: shaConsent,
+				consent_len: shaConsent.length,
+			};
+		});
+
+		const body: BodyIA102 = {
+			sign_tx_id: signTxId,
+			user_ci: b64UserCI,
+			real_name: fullName,
+			phone_num: processPayload(phoneNum, null, 'phone_num'),
+			request_title: requestTitle,
+			device_code: deviceCode,
+			device_browser: 'WB',
+			return_app_scheme_url: processPayload('https://anya-bank.com/return', null, 'return_app_scheme_url'),
+			consent_type: '1',
+			consent_cnt: consent_list.length,
+			consent_list: consent_list,
 		};
-	});
 
-	const return_app_scheme_url = `https://anya-bank.com/return`;
-
-	return {
-		sign_tx_id: signTxId,
-		user_ci: b64UserCI,
-		real_name: fullName,
-		phone_num: processPayload(phoneNum, null, 'phone_num'),
-		request_title: requestTitle,
-		device_code: deviceCode,
-		device_browser: 'WB',
-		return_app_scheme_url: processPayload(return_app_scheme_url, null, 'return_app_scheme_url'),
-		consent_type: '1',
-		consent_cnt: consent_list.length,
-		consent_list: consent_list,
-	};
+		validateBodyIA102(body);
+		return body;
+	} catch (error) {
+		logger.error('Error generating BodyIA102', error);
+		throw error;
+	}
 };
 
-// Generate BodyIA002
+// Generate BodyIA002 with error handling
 export const generateBodyIA002 = async (
 	certTxId: string,
 	consent_list: Consent[],
 	signed_consent_list: SignedConsent[]
 ): Promise<BodyIA002> => {
-	const txId = signed_consent_list[0].tx_id;
-	const orgCode = txId.split('_')[1];
-	const ipCode = txId.split('_')[1];
-	const raCode = txId.split('_')[2];
-	const caCode = txId.split('_')[3];
+	try {
+		if (!certTxId) throw new ValidationError('certTxId is required');
+		if (!consent_list?.length) throw new ValidationError('consent_list is required');
+		if (!signed_consent_list?.length) throw new ValidationError('signed_consent_list is required');
 
-	const organization = await prisma.organization.findFirst({
-		where: { orgCode: ipCode },
-	});
+		const txId = signed_consent_list[0].tx_id;
+		const orgCode = txId.split('_')[1];
+		const ipCode = txId.split('_')[1];
+		const raCode = txId.split('_')[2];
+		const caCode = txId.split('_')[3];
 
-	const oAuthClient = await prisma.oAuthClient.findFirst({
-		where: { organizationId: organization?.id },
-	});
+		const organization = await prisma.organization.findFirst({
+			where: { orgCode: ipCode },
+		});
 
-	const certificate = await prisma.certificate.findFirst({
-		where: { certTxId: certTxId },
-	});
+		if (!organization) throw new ValidationError('Organization not found');
 
-	const account = await prisma.account.findFirst({
-		where: { phoneNumber: certificate?.phoneNumber },
-	});
+		const oAuthClient = await prisma.oAuthClient.findFirst({
+			where: { organizationId: organization?.id },
+		});
 
-	const registrationDate = dayjs().format('DDMMYYYY');
-	const serialNum = '0001';
+		if (!oAuthClient) throw new ValidationError('OAuth client not found');
 
-	const generateNonce = () => {
-		const letter = faker.string.alpha({ casing: 'upper', length: 1 });
-		const year = dayjs().format('YYYY');
-		const randomNumber = faker.number.int({ min: 100000000000000, max: 999999999999999 });
-		return `${letter}${year}${randomNumber}`;
-	};
+		const certificate = await prisma.certificate.findFirst({
+			where: { certTxId: certTxId },
+		});
 
-	const b64PersonInfo = account ? Buffer.from(account.firstName + account.lastName).toString('base64') : '';
-	const b64UserCI = account ? Buffer.from(account.pinCode).toString('base64') : '';
-	const b64Password = Buffer.from('PASSWORD').toString('base64');
+		if (!certificate) throw new ValidationError('Certificate not found');
 
-	return {
-		tx_id: processPayload(txId, null, 'tx_id'),
-		org_code: processPayload(orgCode, null, 'org_code'),
-		grant_type: processPayload('password', null, 'grant_type'),
-		client_id: oAuthClient ? oAuthClient.clientId : '',
-		client_secret: oAuthClient ? oAuthClient.clientSecret : '',
-		ca_code: caCode,
-		username: processPayload(b64UserCI, null, 'username'),
-		request_type: '1',
-		password_len: b64Password.length.toString(),
-		password: b64Password,
-		auth_type: '1',
-		consent_type: '1',
-		consent_len: consent_list[0].consent_len.toString(),
-		consent: consent_list[0].consent,
-		signed_person_info_req_len: b64PersonInfo.length.toString(),
-		signed_person_info_req: b64PersonInfo,
-		consent_nonce: generateNonce(),
-		ucpid_nonce: generateNonce(),
-		cert_tx_id: certTxId,
-		service_id: processPayload(`${ipCode}${registrationDate}${serialNum}`, null, 'service_id'),
-	};
+		const account = await prisma.account.findFirst({
+			where: { phoneNumber: certificate?.phoneNumber },
+		});
+
+		if (!account) throw new ValidationError('Account not found');
+
+		const registrationDate = dayjs().format('DDMMYYYY');
+		const serialNum = '0001';
+
+		const generateNonce = () => {
+			const letter = faker.string.alpha({ casing: 'upper', length: 1 });
+			const year = dayjs().format('YYYY');
+			const randomNumber = faker.number.int({ min: 100000000000000, max: 999999999999999 });
+			return `${letter}${year}${randomNumber}`;
+		};
+
+		const b64PersonInfo = Buffer.from(account.firstName + account.lastName).toString('base64');
+		const b64UserCI = Buffer.from(account.pinCode).toString('base64');
+		const b64Password = Buffer.from('PASSWORD').toString('base64');
+
+		const body: BodyIA002 = {
+			tx_id: processPayload(txId, null, 'tx_id'),
+			org_code: processPayload(orgCode, null, 'org_code'),
+			grant_type: processPayload('password', null, 'grant_type'),
+			client_id: oAuthClient.clientId,
+			client_secret: oAuthClient.clientSecret,
+			ca_code: caCode,
+			username: processPayload(b64UserCI, null, 'username'),
+			request_type: '1',
+			password_len: b64Password.length.toString(),
+			password: b64Password,
+			auth_type: '1',
+			consent_type: '1',
+			consent_len: consent_list[0].consent_len.toString(),
+			consent: consent_list[0].consent,
+			signed_person_info_req_len: b64PersonInfo.length.toString(),
+			signed_person_info_req: b64PersonInfo,
+			consent_nonce: generateNonce(),
+			ucpid_nonce: generateNonce(),
+			cert_tx_id: certTxId,
+			service_id: processPayload(`${ipCode}${registrationDate}${serialNum}`, null, 'service_id'),
+		};
+
+		validateBodyIA002(body);
+		return body;
+	} catch (error) {
+		logger.error('Error generating BodyIA002', error);
+		throw error;
+	}
 };
 
-// API call functions
+// API call functions with error handling
 export const getIA101 = async () => {
-	const attack = generateMaliciousContent();
+	try {
+		const attack = generateMaliciousContent();
 
-	const options = {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/x-www-form-urlencoded',
-			'x-api-tran-id': processPayload(generateTIN('IA101'), attack, 'x-api-tran-id'),
-			'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
-			Cookie: processPayload('', attack, 'Cookie'),
-			'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
-			'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
-			'attack-type': attack?.type || '',
-		},
-		body: new URLSearchParams({
-			grant_type: processPayload('client_credential', attack, 'grant_type'),
-			client_id: processPayload(clientId, attack, 'client_id'),
-			client_secret: processPayload(clientSecret, attack, 'client_secret'),
-			scope: processPayload('ca', attack, 'scope'),
-		}),
-	};
+		const options = {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+				'x-api-tran-id': processPayload(generateTIN('IA101'), attack, 'x-api-tran-id'),
+				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
+				Cookie: processPayload('', attack, 'Cookie'),
+				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
+				'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
+				'attack-type': attack?.type || '',
+			},
+			body: new URLSearchParams({
+				grant_type: processPayload('client_credential', attack, 'grant_type'),
+				client_id: processPayload(clientId, attack, 'client_id'),
+				client_secret: processPayload(clientSecret, attack, 'client_secret'),
+				scope: processPayload('ca', attack, 'scope'),
+			}),
+		};
 
-	console.log('Requesting token:', options);
-	const response = await fetch('http://localhost:3000/api/oauth/2.0/token', options);
-
-	if (!response.ok) console.error(`HTTP error on IA101! Status: ${response.status}`);
-	return await response.json();
+		logger.info('Requesting token');
+		return await makeAPICall('http://localhost:3000/api/oauth/2.0/token', options, 'Token request');
+	} catch (error) {
+		logger.error('Error in getIA101', error);
+		throw error;
+	}
 };
 
 const getIA102 = async (access_token: string, body: BodyIA102) => {
-	const attack = generateMaliciousContent();
-	const options = {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			Authorization: `Bearer ${access_token}`,
-			'x-api-tran-id': processPayload(generateTIN('IA102'), attack, 'x-api-tran-id'),
-			'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
-			Cookie: processPayload('', attack, 'Cookie'),
-			'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
-			'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
-			'attack-type': attack?.type || '',
-		},
-		body: JSON.stringify(body),
-	};
+	try {
+		if (!access_token) throw new ValidationError('Access token is required');
+		validateBodyIA102(body);
 
-	console.log('Requesting sign:', options);
-	const response = await fetch(`http://localhost:3000/api/ca/sign_request`, options);
+		const attack = generateMaliciousContent();
+		const options = {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${access_token}`,
+				'x-api-tran-id': processPayload(generateTIN('IA102'), attack, 'x-api-tran-id'),
+				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
+				Cookie: processPayload('', attack, 'Cookie'),
+				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
+				'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
+				'attack-type': attack?.type || '',
+			},
+			body: JSON.stringify(body),
+		};
 
-	if (!response.ok) console.error(`HTTP error! Status: ${response.status}`);
-	return await response.json();
+		logger.info('Requesting sign');
+		return await makeAPICall('http://localhost:3000/api/ca/sign_request', options, 'Sign request');
+	} catch (error) {
+		logger.error('Error in getIA102', error);
+		throw error;
+	}
 };
 
-// Similar updates for getIA103, getIA002, getSupport001, getSupport002
-// ... (rest of the API functions follow the same pattern)
 const getIA103 = async (access_token: string, body: BodyIA103) => {
-	const attack = generateMaliciousContent();
-	const options = {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			Authorization: `Bearer ${access_token}`,
-			'x-api-tran-id': processPayload(generateTIN('IA103'), attack, 'x-api-tran-id'),
-			'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
-			Cookie: processPayload('', attack, 'Cookie'),
-			'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
-			'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
-			'attack-type': attack?.type || '',
-		},
-		body: JSON.stringify(body),
-	};
+	try {
+		if (!access_token) throw new ValidationError('Access token is required');
+		validateBodyIA103(body);
 
-	console.log('Requesting sign result:', options);
-	const response = await fetch(`http://localhost:3000/api/ca/sign_result`, options);
+		const attack = generateMaliciousContent();
+		const options = {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${access_token}`,
+				'x-api-tran-id': processPayload(generateTIN('IA103'), attack, 'x-api-tran-id'),
+				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
+				Cookie: processPayload('', attack, 'Cookie'),
+				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
+				'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
+				'attack-type': attack?.type || '',
+			},
+			body: JSON.stringify(body),
+		};
 
-	if (!response.ok) console.error(`HTTP error! Status: ${response.status}`);
-	return await response.json();
+		logger.info('Requesting sign result');
+		return await makeAPICall('http://localhost:3000/api/ca/sign_result', options, 'Sign result request');
+	} catch (error) {
+		logger.error('Error in getIA103', error);
+		throw error;
+	}
 };
 
 const getIA002 = async (body: BodyIA002) => {
-	const attack = generateMaliciousContent();
-	const options = {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/x-www-form-urlencoded',
-			'x-api-tran-id': processPayload(generateTIN('IA002'), attack, 'x-api-tran-id'),
-			'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
-			Cookie: processPayload('', attack, 'Cookie'),
-			'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
-			'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
-			'attack-type': attack?.type || '',
-		},
-		body: new URLSearchParams(body),
-	};
+	try {
+		validateBodyIA002(body);
 
-	console.log('Requesting access token:', options);
-	const response = await fetch(`${otherBankAPI}/api/oauth/2.0/token`, options);
+		const attack = generateMaliciousContent();
+		const options = {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+				'x-api-tran-id': processPayload(generateTIN('IA002'), attack, 'x-api-tran-id'),
+				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
+				Cookie: processPayload('', attack, 'Cookie'),
+				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
+				'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
+				'attack-type': attack?.type || '',
+			},
+			body: new URLSearchParams(body),
+		};
 
-	if (!response.ok) console.error(`HTTP error! Status: ${response.status}`);
-	return await response.json();
+		logger.info('Requesting access token');
+		return await makeAPICall(`${otherBankAPI}/api/oauth/2.0/token`, options, 'Access token request');
+	} catch (error) {
+		logger.error('Error in getIA002', error);
+		throw error;
+	}
 };
 
 const getAccountsBasic = async (orgCode: string, accountNum: string, access_token: string) => {
-	const attack = generateMaliciousContent();
-	const options = {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${access_token}`,
-			'x-api-tran-id': processPayload(generateTIN('ADB01'), attack, 'x-api-tran-id'),
-			'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
-			Cookie: processPayload('', attack, 'Cookie'),
-			'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
-			'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
-			'attack-type': attack?.type || '',
-		},
-		body: JSON.stringify({
-			org_code: otherOrgCode,
-			account_num: accountNum,
-			next: '0',
-			search_timestamp: timestamp(new Date()),
-		}),
-	};
+	try {
+		if (!orgCode) throw new ValidationError('Organization code is required');
+		if (!accountNum) throw new ValidationError('Account number is required');
+		if (!access_token) throw new ValidationError('Access token is required');
 
-	console.log('Requesting basic account information:', options);
-	const response = await fetch(`${otherBankAPI}/api/v2/bank/accounts/deposit/basic`, options);
+		const attack = generateMaliciousContent();
+		const options = {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${access_token}`,
+				'x-api-tran-id': processPayload(generateTIN('ADB01'), attack, 'x-api-tran-id'),
+				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
+				Cookie: processPayload('', attack, 'Cookie'),
+				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
+				'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
+				'attack-type': attack?.type || '',
+			},
+			body: JSON.stringify({
+				org_code: otherOrgCode,
+				account_num: accountNum,
+				next: '0',
+				search_timestamp: timestamp(new Date()),
+			}),
+		};
 
-	if (!response.ok) console.error(`HTTP error! Status: ${response.status}`);
-	return await response.json();
+		logger.info('Requesting basic account information');
+		return await makeAPICall(
+			`${otherBankAPI}/api/v2/bank/accounts/deposit/basic`,
+			options,
+			'Basic account information request'
+		);
+	} catch (error) {
+		logger.error('Error in getAccountsBasic', error);
+		throw error;
+	}
 };
 
 const getAccountsDetail = async (orgCode: string, accountNum: string, access_token: string) => {
-	const attack = generateMaliciousContent();
-	const options = {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${access_token}`,
-			'x-api-tran-id': processPayload(generateTIN('ADD01'), attack, 'x-api-tran-id'),
-			'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
-			Cookie: processPayload('', attack, 'Cookie'),
-			'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
-			'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
-			'attack-type': attack?.type || '',
-		},
-		body: JSON.stringify({
-			org_code: otherOrgCode,
-			account_num: accountNum,
-			next: '0',
-			search_timestamp: timestamp(new Date()),
-		}),
-	};
+	try {
+		if (!orgCode) throw new ValidationError('Organization code is required');
+		if (!accountNum) throw new ValidationError('Account number is required');
+		if (!access_token) throw new ValidationError('Access token is required');
 
-	console.log('Requesting detailed account information:', options);
-	const response = await fetch(`${otherBankAPI}/api/v2/bank/accounts/deposit/detail`, options);
+		const attack = generateMaliciousContent();
+		const options = {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${access_token}`,
+				'x-api-tran-id': processPayload(generateTIN('ADD01'), attack, 'x-api-tran-id'),
+				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
+				Cookie: processPayload('', attack, 'Cookie'),
+				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
+				'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
+				'attack-type': attack?.type || '',
+			},
+			body: JSON.stringify({
+				org_code: otherOrgCode,
+				account_num: accountNum,
+				next: '0',
+				search_timestamp: timestamp(new Date()),
+			}),
+		};
 
-	if (!response.ok) console.error(`HTTP error! Status: ${response.status}`);
-	return await response.json();
+		logger.info('Requesting detailed account information');
+		return await makeAPICall(
+			`${otherBankAPI}/api/v2/bank/accounts/deposit/detail`,
+			options,
+			'Detailed account information request'
+		);
+	} catch (error) {
+		logger.error('Error in getAccountsDetail', error);
+		throw error;
+	}
 };
 
-// getSupport001: Request token for management API
 export async function getSupport001() {
-	const attack = generateMaliciousContent();
+	try {
+		const attack = generateMaliciousContent();
+		const options = {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+				'x-api-tran-id': processPayload(generateTIN('SU001'), attack, 'x-api-tran-id'),
+				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
+				Cookie: processPayload('', attack, 'Cookie'),
+				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
+				'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
+				'attack-type': attack?.type || '',
+			},
+			body: new URLSearchParams({
+				grant_type: processPayload('client_credential', attack, 'grant_type'),
+				client_id: processPayload(clientId, attack, 'client_id'),
+				client_secret: processPayload(clientSecret, attack, 'client_secret'),
+				scope: processPayload('manage', attack, 'scope'),
+			}),
+		};
 
-	const options = {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/x-www-form-urlencoded',
-			'x-api-tran-id': processPayload(generateTIN('SU001'), attack, 'x-api-tran-id'),
-			'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
-			Cookie: processPayload('', attack, 'Cookie'),
-			'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
-			'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
-			'attack-type': attack?.type || '',
-		},
-		body: new URLSearchParams({
-			grant_type: processPayload('client_credential', attack, 'grant_type'),
-			client_id: processPayload(clientId, attack, 'client_id'),
-			client_secret: processPayload(clientSecret, attack, 'client_secret'),
-			scope: processPayload('manage', attack, 'scope'),
-		}),
-	};
-
-	console.log('Requesting management token:', options);
-	const response = await fetch('http://localhost:3000/api/v2/mgmts/oauth/2.0/token', options);
-
-	if (!response.ok) console.error(`HTTP error on Support001! Status: ${response.status}`);
-	return await response.json();
+		logger.info('Requesting management token');
+		return await makeAPICall('http://localhost:3000/api/v2/mgmts/oauth/2.0/token', options, 'Management token request');
+	} catch (error) {
+		logger.error('Error in getSupport001', error);
+		throw error;
+	}
 }
 
-// getSupport002: Fetch organization list
 export async function getSupport002() {
-	const attack = generateMaliciousContent();
+	try {
+		const attack = generateMaliciousContent();
+		const tokenResponse = (await getSupport001()) as { access_token: string };
 
-	const token = await getSupport001();
-	const { access_token } = token;
+		if (!tokenResponse?.access_token) {
+			throw new APIError('Failed to obtain management token', 401, 'UNAUTHORIZED');
+		}
 
-	const options = {
-		method: 'GET',
-		headers: {
-			'Content-Type': 'application/json',
-			'x-api-tran-id': processPayload(generateTIN('SU002'), attack, 'x-api-tran-id'),
-			Cookie: processPayload('', attack, 'Cookie'),
-			'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
-			'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
-			'attack-type': attack?.type || '',
-			Authorization: `Bearer ${processPayload(access_token, attack, 'Authorization')}`,
-		},
-	};
+		const options = {
+			method: 'GET',
+			headers: {
+				'Content-Type': 'application/json',
+				'x-api-tran-id': processPayload(generateTIN('SU002'), attack, 'x-api-tran-id'),
+				Cookie: processPayload('', attack, 'Cookie'),
+				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
+				'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
+				'attack-type': attack?.type || '',
+				Authorization: `Bearer ${processPayload(tokenResponse.access_token, attack, 'Authorization')}`,
+			},
+		};
 
-	console.log('Fetching organization list:', options);
-	const response = await fetch(
-		`http://localhost:3000/api/v2/mgmts/orgs?search_timestamp=${processPayload(
-			timestamp(new Date()),
-			attack,
-			'timestamp'
-		)}`,
-		options
-	);
-
-	if (!response.ok) console.error(`HTTP error on Support002! Status: ${response.status}`);
-	return await response.json();
+		logger.info('Fetching organization list');
+		return await makeAPICall(
+			`http://localhost:3000/api/v2/mgmts/orgs?search_timestamp=${processPayload(
+				timestamp(new Date()),
+				attack,
+				'timestamp'
+			)}`,
+			options,
+			'Organization list request'
+		);
+	} catch (error) {
+		logger.error('Error in getSupport002', error);
+		throw error;
+	}
 }
 
-// Main simulation function
+// Main simulation function with comprehensive error handling
 async function main() {
-	const response = await getSupport002();
+	try {
+		const response = await getSupport002();
 
-	// Simulate user flow
-	const token = await getIA101();
-	const { access_token } = token;
+		const token = (await getIA101()) as { access_token: string };
+		if (!token?.access_token) {
+			throw new APIError('Failed to obtain access token', 401, 'UNAUTHORIZED');
+		}
 
-	if (!access_token) console.error('Error fetching access token in IA101');
+		// Add delay to simulate user interaction
+		await new Promise((resolve) => setTimeout(resolve, 1000));
 
-	// Add delay to simulate user interaction
-	await new Promise((resolve) => setTimeout(resolve, 500));
+		// Fetch accounts with error handling
+		const accounts = await prisma.account
+			.findMany({
+				where: { orgCode: orgCode },
+			})
+			.catch((error) => {
+				throw new APIError('Failed to fetch accounts', 500, 'DATABASE_ERROR', error);
+			});
 
-	// Fetch accounts
-	const accounts = await prisma.account.findMany({
-		where: { orgCode: orgCode },
-	});
+		if (!accounts || accounts.length === 0) {
+			throw new APIError('No accounts found', 404, 'NOT_FOUND');
+		}
 
-	if (!accounts) console.error('Error fetching accounts');
+		const account = faker.helpers.arrayElement(accounts);
+		const bodyIA102 = await generateBodyIA102(account);
+		const responseIA102 = (await getIA102(token.access_token, bodyIA102)) as {
+			cert_tx_id: string;
+			sign_tx_id: string;
+		};
 
-	const account = faker.helpers.arrayElement(accounts);
-	const bodyIA102 = await generateBodyIA102(account);
+		if (!responseIA102?.cert_tx_id) {
+			throw new APIError('Invalid sign request response', 500, 'INVALID_RESPONSE');
+		}
 
-	const responseIA102 = await getIA102(access_token, bodyIA102);
-	if (!responseIA102) console.error('Error sign request in IA102');
-
-	await new Promise((resolve) => setTimeout(resolve, 500));
-
-	const bodyIA103: BodyIA103 = {
-		sign_tx_id: bodyIA102.sign_tx_id,
-		cert_tx_id: responseIA102.cert_tx_id,
-	};
-
-	const responseIA103 = await getIA103(access_token, bodyIA103);
-	if (!responseIA103) console.error('Error sign result in IA103');
-
-	await new Promise((resolve) => setTimeout(resolve, 500));
-
-	const certTxId = responseIA102.cert_tx_id;
-	const signedConsentList = responseIA103.signed_consent_list;
-	const consentList = bodyIA102.consent_list;
-
-	const bodyIA002 = await generateBodyIA002(certTxId, consentList, signedConsentList);
-	const responseIA002 = await getIA002(bodyIA002);
-
-	if (!responseIA002) console.error('Error request for access token in IA002');
-
-	await new Promise((resolve) => setTimeout(resolve, 500));
-
-	// Fetch account details
-	const isGetBasic = faker.datatype.boolean();
-	const isGetDetail = faker.datatype.boolean();
-
-	if (isGetBasic) {
-		const accountsBasic = await getAccountsBasic(orgCode, account.accountNum, responseIA002.access_token);
-		if (!accountsBasic) console.error('Error fetching basic account information');
 		await new Promise((resolve) => setTimeout(resolve, 500));
-	}
 
-	if (isGetDetail) {
-		const accountsDetail = await getAccountsDetail(orgCode, account.accountNum, responseIA002.access_token);
-		if (!accountsDetail) console.error('Error fetching detailed account information');
+		const bodyIA103: BodyIA103 = {
+			sign_tx_id: bodyIA102.sign_tx_id,
+			cert_tx_id: responseIA102.cert_tx_id,
+		};
+
+		const responseIA103 = (await getIA103(token.access_token, bodyIA103)) as { signed_consent_list: SignedConsent[] };
+		if (!responseIA103?.signed_consent_list) {
+			throw new APIError('Invalid sign result response', 500, 'INVALID_RESPONSE');
+		}
+
 		await new Promise((resolve) => setTimeout(resolve, 500));
+
+		const bodyIA002 = await generateBodyIA002(
+			responseIA102.cert_tx_id,
+			bodyIA102.consent_list,
+			responseIA103.signed_consent_list
+		);
+
+		const responseIA002 = (await getIA002(bodyIA002)) as { access_token: string };
+		if (!responseIA002?.access_token) {
+			throw new APIError('Failed to obtain access token', 401, 'UNAUTHORIZED');
+		}
+
+		await new Promise((resolve) => setTimeout(resolve, 500));
+
+		// Fetch account details with randomization
+		const isGetBasic = faker.datatype.boolean();
+		const isGetDetail = faker.datatype.boolean();
+
+		if (isGetBasic) {
+			await getAccountsBasic(orgCode, account.accountNum, responseIA002.access_token);
+			await new Promise((resolve) => setTimeout(resolve, 500));
+		}
+
+		if (isGetDetail) {
+			await getAccountsDetail(orgCode, account.accountNum, responseIA002.access_token);
+			await new Promise((resolve) => setTimeout(resolve, 500));
+		}
+
+		logger.info('Main process completed successfully');
+	} catch (error) {
+		if (error instanceof APIError) {
+			logger.error(`API Error: ${error.message}`, {
+				statusCode: error.statusCode,
+				errorCode: error.errorCode,
+				originalError: error.originalError,
+			});
+		} else if (error instanceof ValidationError) {
+			logger.error(`Validation Error: ${error.message}`);
+		} else {
+			logger.error('Unexpected error in main function', error);
+		}
+		throw error;
 	}
 }
 
-// Run iterations
+// Run iterations with retry logic
 async function runIterations() {
 	const iterations = 200;
 	const delayBetweenIterations = 1000;
+	const maxRetries = 3;
 
 	for (let i = 0; i < iterations; i++) {
-		await main();
-		console.log(`Iteration ${i + 1} completed.`);
-
+		let retries = 0;
+		while (retries < maxRetries) {
+			try {
+				await main();
+				logger.info(`Iteration ${i + 1} completed successfully`);
+				break;
+			} catch (error) {
+				retries++;
+				if (retries === maxRetries) {
+					logger.error(`Iteration ${i + 1} failed after ${maxRetries} retries`, error);
+					// Continue with next iteration instead of stopping completely
+					break;
+				}
+				logger.warn(`Retry ${retries} for iteration ${i + 1}`);
+				await new Promise((resolve) => setTimeout(resolve, 1000 * retries));
+			}
+		}
 		await new Promise((resolve) => setTimeout(resolve, delayBetweenIterations));
 	}
 
-	console.log('All iterations completed.');
+	logger.info('All iterations completed');
 }
 
-// Execute
+// Execute with proper error handling and cleanup
 runIterations()
-	.catch((e) => {
-		console.error('Error during iterations:', e);
+	.catch((error) => {
+		logger.error('Fatal error in runIterations', error);
+		process.exit(1);
 	})
 	.finally(async () => {
-		await prisma.$disconnect();
+		try {
+			await prisma.$disconnect();
+			logger.info('Prisma disconnected successfully');
+		} catch (error) {
+			logger.error('Error disconnecting from Prisma', error);
+			process.exit(1);
+		}
 	});
