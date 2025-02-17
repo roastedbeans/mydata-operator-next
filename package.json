@@ -10,7 +10,8 @@
 		"lint": "next lint",
 		"seedAccount": "ts-node scripts/seedAccount.ts",
 		"simulate": "ts-node scripts/simulateV2.ts",
-		"attack": "ts-node scripts/attackSimulate.ts"
+		"attack": "ts-node scripts/attackSimulate.ts",
+		"detect": "ts-node scripts/detectionV2.ts"
 	},
 	"dependencies": {
 		"@heroui/button": "^2.2.10",
@@ -30,7 +31,8 @@
 		"react": "^18",
 		"react-dom": "^18",
 		"tsconfig-paths": "^4.2.0",
-		"uuid": "^11.0.5"
+		"uuid": "^11.0.5",
+		"zod": "^3.24.2"
 	},
 	"devDependencies": {
 		"@faker-js/faker": "^9.4.0",

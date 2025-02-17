@@ -3,9 +3,12 @@ import fs from 'fs';
 import path from 'path';
 import { generateTxtFile } from './generateLog';
 
-const csvFilePath = path.resolve(`./mo_formatted_logs.csv`);
+const filePath = path.join(process.cwd(), '/public/requests_responses.txt');
+const csvFIlePath = path.join(process.cwd(), '/public/mo_formatted_logs.csv');
+const csvFilePath = path.resolve(csvFIlePath);
 // Define CSV headers
 const csvHeaders = [
+	{ id: 'attack_type', title: 'attack.type' },
 	{ id: 'request_url', title: 'request.url' },
 	{ id: 'request_method', title: 'request.method' },
 	{ id: 'request_authorization', title: 'request.header.authorization' },
@@ -20,7 +23,6 @@ const csvHeaders = [
 	{ id: 'request_body', title: 'request.body' },
 	{ id: 'response_body', title: 'response.body' },
 	{ id: 'response_status', title: 'response.status' },
-	{ id: 'attack_type', title: 'attack.type' },
 ];
 
 // Initialize CSV file with headers if it doesn't exist
@@ -51,6 +53,7 @@ export const logger = async (
 	});
 
 	const requestContent = {
+		'attack-type': req?.headers?.['attack-type'] || '',
 		url: req?.url || '',
 		method: req?.method || '',
 		authorization: req?.headers?.authorization || '',
@@ -73,10 +76,14 @@ export const logger = async (
 	const stringRequestContent = JSON.stringify(requestContent);
 	const stringResponseContent = JSON.stringify(responseContent);
 
-	generateTxtFile('./requests_responses.txt', { request: stringRequestContent, response: stringResponseContent });
+	generateTxtFile(filePath, {
+		request: stringRequestContent,
+		response: stringResponseContent,
+	});
 
 	await csvWriter.writeRecords([
 		{
+			attack_type: req?.headers?.['attack-type'] || '',
 			request_url: req?.url || '',
 			request_method: req?.method || '',
 			request_authorization: req?.headers?.authorization || '',
@@ -91,7 +98,6 @@ export const logger = async (
 			request_body: JSON.stringify(requestBody),
 			response_body: JSON.stringify(responseBody),
 			response_status: responseStatusCode,
-			attack_type: req?.headers?.['attack-type'] || '',
 		},
 	]);
 };

