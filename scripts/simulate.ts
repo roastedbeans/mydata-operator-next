@@ -57,12 +57,15 @@ export type SignedConsent = {
 	signed_consent_len: number;
 };
 
+// Initialize Prisma and constants
 const prisma = new PrismaClient();
 const otherBankAPI = 'http://localhost:4000';
-const orgCode = 'ORG2025002';
-const otherOrgCode = 'ORG2025001';
-const clientId = 'ORG2025002-CLIENT-ID';
-const clientSecret = 'ORG2025002-CLIENT-SECRET';
+const otherOrgCode = 'anya123456';
+const orgCode = 'bond123456';
+const clientId = 'xv9gqz7mb4t2o5wcf8rjy6kphudsnea0l3ytkpdhqrvcxz1578';
+const clientSecret = 'm4q7xv9zb2tgc8rjy6kphudsnea0l3ow5ytkpdhqrvcfz926bt';
+const caCode = 'certauth00';
+const orgSerialCode = 'bondserial00';
 
 export const generateTIN = (prefix: string) => {
 	const date = new Date();

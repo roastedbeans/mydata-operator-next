@@ -98,8 +98,8 @@ const prisma = new PrismaClient();
 const otherBankAPI = 'http://localhost:4000';
 const otherOrgCode = 'anya123456';
 const orgCode = 'bond123456';
-const clientId = 'bond123456clientid';
-const clientSecret = 'bond123456clientsecret';
+const clientId = 'xv9gqz7mb4t2o5wcf8rjy6kphudsnea0l3ytkpdhqrvcxz1578';
+const clientSecret = 'm4q7xv9zb2tgc8rjy6kphudsnea0l3ow5ytkpdhqrvcfz926bt';
 const caCode = 'certauth00';
 const orgSerialCode = 'bondserial00';
 
@@ -186,6 +186,8 @@ const generateMaliciousContent = (attackLocation: string[]): AttackConfiguration
 				]),
 				location,
 			})),
+
+			// Payload overflow attack
 		];
 
 		const shouldAttack = faker.datatype.boolean(0.3); // 30% attack chance
