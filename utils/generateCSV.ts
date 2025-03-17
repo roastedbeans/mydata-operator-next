@@ -2,7 +2,7 @@ import { createObjectCsvWriter as createCsvWriter } from 'csv-writer';
 import fs from 'fs';
 import path from 'path';
 
-const csvFIlePath = path.join(process.cwd(), '/public/ca_formatted_logs.csv');
+const csvFIlePath = path.join(process.cwd(), '/public/mo_formatted_logs.csv');
 const csvFilePath = path.resolve(csvFIlePath);
 // Define CSV headers
 const csvHeaders = [
