@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { getResponseMessage } from '@/constants/responseMessages';
 import jwt from 'jsonwebtoken';
 import { logger } from '@/utils/generateCSV';
+import { timestamp } from '@/utils/formatTimestamp';
 
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secure-secret';
@@ -105,11 +106,10 @@ export async function POST(req: NextRequest) {
 			};
 		});
 
-		const timestamp = new Date().toISOString();
 		const responseData = {
 			rsp_code: getResponseMessage('SUCCESS').code,
 			rsp_msg: getResponseMessage('SUCCESS').message,
-			search_timestamp: timestamp,
+			search_timestamp: timestamp(new Date()),
 			detail_cnt: detailList.length,
 			detailList: detailList,
 		};

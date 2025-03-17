@@ -41,7 +41,7 @@ interface DetectionResult {
 
 interface LogRecord {
 	timestamp: string;
-	detectionType: 'Signature' | 'Specification';
+	detectionType: 'Signature' | 'Specification' | 'Hybrid';
 	detected: boolean;
 	reason: string;
 	request: string;
@@ -324,33 +324,9 @@ class SignatureBasedDetection {
 		maliciousHeaders: securityPatterns.maliciousHeaders,
 		fileUpload: securityPatterns.fileUpload,
 		commandInjection: securityPatterns.commandInjection,
-
-		rateLimiting: {
-			maxRequestsPerMinute: 100,
-			maxPayloadSize: 1000000,
-		},
 	};
 
-	private readonly requestHistory: Map<string, number[]> = new Map();
-
 	detect(entry: LogEntry): DetectionResult {
-		// Check rate limiting
-		const clientId = entry.request['x-api-tran-id']; // Assuming x-api-tran-id is the client ID
-		if (this.isRateLimitExceeded(clientId)) {
-			return {
-				detected: true,
-				reason: 'Rate limit exceeded',
-			};
-		}
-
-		// Check payload size
-		if (this.isPayloadSizeExceeded(entry)) {
-			return {
-				detected: true,
-				reason: 'Payload size exceeded',
-			};
-		}
-
 		// Check entire request and response for known attack patterns
 		const fullRequest = JSON.stringify(entry.request);
 		const fullResponse = JSON.stringify(entry.response);
@@ -367,7 +343,6 @@ class SignatureBasedDetection {
 				reason: 'SQL Injection attempt detected',
 			};
 		}
-
 		// Check SSRF
 		if (SignatureBasedDetection.KNOWN_ATTACK_PATTERNS.ssrf.some((pattern) => pattern.test(fullLines))) {
 			return {
@@ -375,7 +350,6 @@ class SignatureBasedDetection {
 				reason: 'SSRF attempt detected',
 			};
 		}
-
 		// Check XSS
 		if (SignatureBasedDetection.KNOWN_ATTACK_PATTERNS.xss.some((pattern) => pattern.test(fullLines))) {
 			return {
@@ -383,7 +357,6 @@ class SignatureBasedDetection {
 				reason: 'XSS attempt detected',
 			};
 		}
-
 		// Check XXE
 		if (SignatureBasedDetection.KNOWN_ATTACK_PATTERNS.xxe.some((pattern) => pattern.test(fullLines))) {
 			return {
@@ -391,7 +364,6 @@ class SignatureBasedDetection {
 				reason: 'XXE attempt detected',
 			};
 		}
-
 		// Check Path Traversal
 		if (SignatureBasedDetection.KNOWN_ATTACK_PATTERNS.pathTraversal.some((pattern) => pattern.test(fullLines))) {
 			return {
@@ -399,7 +371,6 @@ class SignatureBasedDetection {
 				reason: 'Path traversal attempt detected',
 			};
 		}
-
 		// Check Cookie Injection
 		if (SignatureBasedDetection.KNOWN_ATTACK_PATTERNS.cookieInjection.some((pattern) => pattern.test(fullLines))) {
 			return {
@@ -407,7 +378,6 @@ class SignatureBasedDetection {
 				reason: 'Cookie Injection attempt detected',
 			};
 		}
-
 		// Check File Upload
 		if (SignatureBasedDetection.KNOWN_ATTACK_PATTERNS.fileUpload.some((pattern) => pattern.test(bodyStr))) {
 			return {
@@ -415,7 +385,6 @@ class SignatureBasedDetection {
 				reason: 'File Upload attempt detected',
 			};
 		}
-
 		// Check Command Injection
 		if (SignatureBasedDetection.KNOWN_ATTACK_PATTERNS.commandInjection.some((pattern) => pattern.test(bodyStr))) {
 			return {
@@ -423,7 +392,6 @@ class SignatureBasedDetection {
 				reason: 'Command Injection attempt detected',
 			};
 		}
-
 		// Check headers
 		for (const [headerName, patterns] of Object.entries(
 			SignatureBasedDetection.KNOWN_ATTACK_PATTERNS.maliciousHeaders
@@ -441,54 +409,71 @@ class SignatureBasedDetection {
 			reason: 'No known attack patterns detected',
 		};
 	}
-
-	private isRateLimitExceeded(clientId: string): boolean {
-		const now = Date.now();
-		const windowSize = 60000;
-		let requests = this.requestHistory.get(clientId) || [];
-		requests = requests.filter((timestamp) => now - timestamp < windowSize);
-		requests.push(now);
-		this.requestHistory.set(clientId, requests);
-		return requests.length > SignatureBasedDetection.KNOWN_ATTACK_PATTERNS.rateLimiting.maxRequestsPerMinute;
-	}
-
-	private isPayloadSizeExceeded(entry: LogEntry): boolean {
-		const bodySize = Buffer.from(
-			typeof entry.request.body === 'string' ? entry.request.body : JSON.stringify(entry.request.body)
-		).length;
-		return bodySize > SignatureBasedDetection.KNOWN_ATTACK_PATTERNS.rateLimiting.maxPayloadSize;
-	}
 }
 
 // Specification-based Detection Implementation
 class SpecificationBasedDetection {
 	private static readonly defaultRequestHeadersSchema = z.object({
-		'content-length': z.string().max(10),
-		'user-agent': z.string().max(50),
-		cookie: z.string().max(0),
-		'set-cookie': z.string().max(0),
-		'x-csrf-token': z.string().max(0),
+		'content-length': z.string().max(10, {
+			message: 'Content-Length does NOT match the specification, possible Buffer Overflow Attack or Request Smuggling',
+		}),
+		'user-agent': z.string().max(50, {
+			message: 'User-Agent does NOT match the specification, possible User-Agent Spoofing or Command Injection Attack',
+		}),
+		cookie: z.string().max(0, {
+			message: 'Cookie header does NOT match the specification, possible Session Hijacking or Cookie Poisoning Attack',
+		}),
+		'set-cookie': z.string().max(0, {
+			message:
+				'Set-Cookie header does NOT match the specification, possible Cross-Site Cooking or Cookie Injection Attack',
+		}),
+		'x-csrf-token': z.string().max(0, {
+			message: 'X-CSRF-Token header does NOT match the specification, possible Cross-Site Request Forgery Attack',
+		}),
 		'x-api-tran-id': z
 			.string()
-			.length(25)
-			.refine((str) => ['M', 'S', 'R', 'C', 'P', 'A'].includes(str.charAt(10))),
-		'x-api-type': z.string().max(0),
+			.length(25, {
+				message:
+					'X-API-Tran-ID does NOT match the specification, possible Transaction ID Tampering or Request Replay Attack',
+			})
+			.refine((str) => ['M', 'S', 'R', 'C', 'P', 'A'].includes(str.charAt(10)), {
+				message:
+					'X-API-Tran-ID character does NOT match the specification, possible Transaction Format Manipulation Attack',
+			}),
 	});
 
 	private static readonly withTokenRequestHeadersSchema = {
-		authorization: z.string().max(1500),
-		'content-type': z
-			.string()
-			.max(50)
-			.refine((val) => val === 'application/json'),
+		authorization: z.string().max(1500, {
+			message:
+				'Authorization header does NOT match the specification, possible Token Manipulation or JWT Tampering Attack',
+		}),
+		'content-type': z.string().refine((val) => val === 'application/json;charset=UTF-8', {
+			message:
+				'Content-Type does NOT match the specification, possible Content Type Manipulation, MIME Confusion Attack or Request Smuggling Attack',
+		}),
+		'x-api-type': z.enum(['regular', 'irregular'], {
+			message: 'X-API-Type header does NOT match the specification, possible API Injection or Request Forgery Attack',
+		}),
 	};
 
 	private static readonly defaultResponseHeadersSchema = z.object({
 		'x-api-tran-id': z
 			.string()
-			.length(25)
-			.refine((str) => ['M', 'S', 'R', 'C', 'P', 'A'].includes(str.charAt(10))),
+			.length(25, {
+				message:
+					'Response X-API-Tran-ID does NOT match the specification, possible Response Tampering or Man-in-the-Middle Attack',
+			})
+			.refine((str) => ['M', 'S', 'R', 'C', 'P', 'A'].includes(str.charAt(10)), {
+				message: 'Response X-API-Tran-ID does NOT match the specification, possible Response Integrity Attack',
+			}),
 	});
+
+	private static readonly rateLimiting = {
+		rateLimiting: {
+			maxRequestsPerMinute: 100,
+			maxPayloadSize: 1000,
+		},
+	};
 
 	private static readonly apiSchemas: {
 		[key: string]: { [method: string]: { request: z.ZodTypeAny; response: z.ZodTypeAny } };
@@ -497,88 +482,142 @@ class SpecificationBasedDetection {
 			POST: {
 				request: z.object({
 					headers: SpecificationBasedDetection.defaultRequestHeadersSchema.extend({
-						'content-type': z
-							.string()
-							.max(50)
-							.refine((val) => val === 'application/x-www-form-urlencoded'),
+						'content-type': z.string().refine((val) => val === 'application/x-www-form-urlencoded', {
+							message:
+								'Content-Type does NOT match the specification, possible OAuth Parameter Injection or Content Type Confusion Attack',
+						}),
+						'x-api-type': z.string().max(0, {
+							message:
+								'X-API-Type header does NOT match the specification, possible API Injection or Request Forgery Attack',
+						}),
 					}),
 					body: z.object({
-						tx_id: z
-							.string()
-							.max(74)
-							.describe(
-								'Format: MD_MyData Business Operator Code (10)_Information Provider Code (10)_Reporting Agency Code (10)_Certification Authority Code (10)_Request Time (YYYYMMDDHMMSS, 14)_Serial Number (12)'
-							),
+						tx_id: z.string().length(74, {
+							message: 'tx_id does NOT match the specification, possible Transaction ID Forgery Attack',
+						}),
 						org_code: z
 							.string()
 							.max(10)
-							.regex(/^[a-z0-9]+$/),
-						grant_type: z.literal('password'),
-						client_id: z
-							.string()
-							.max(50)
-							.regex(/^[a-z0-9]+$/),
-						client_secret: z
-							.string()
-							.max(50)
-							.regex(/^[a-z0-9]+$/),
+							.regex(/^[a-z0-9]+$/, {
+								message: 'org_code does NOT match the specification, possible injection attack',
+							}),
+						grant_type: z.string().refine((val) => val === 'password', {
+							message: 'grant_type does NOT match the specification, possible OAuth flow manipulation',
+						}),
+						client_id: z.string().length(50, {
+							message:
+								'client_id does NOT match the specification, possible Client Impersonation Attack, ID Injection or Enumeration Attack',
+						}),
+						client_secret: z.string().length(50, {
+							message:
+								'client_secret does NOT match the specification, possible Credential Stuffing, Brute Force Attack or possible Secret Injection Attack',
+						}),
 						ca_code: z
 							.string()
-							.max(10)
-							.regex(/^[a-z0-9]+$/),
+							.length(10)
+							.regex(/^[A-Za-z0-9]+$/, {
+								message: 'ca_code does NOT match the specification, possible certificate authority manipulation',
+							}),
 						username: z
 							.string()
 							.max(100)
-							.regex(/^[A-Za-z0-9+/=]+$/, 'Must be Base64 encoded'),
-						request_type: z.literal('1'),
-						password_len: z.string().max(5).regex(/^\d+$/),
+							.regex(/^[A-Za-z0-9+/=]+$/, {
+								message: 'username does NOT match the specification, must be Base64 encoded',
+							}),
+						request_type: z.literal('1', {
+							message: 'request_type does NOT match the specification, possible request type manipulation',
+						}),
+						password_len: z.string().max(5).regex(/^\d+$/, {
+							message: 'password_len does NOT match the specification, possible length manipulation attack',
+						}),
 						password: z
 							.string()
 							.max(10000)
-							.regex(/^[A-Za-z0-9+/=]+$/, 'Must be Base64 encoded - CMS Signed Data'),
-						auth_type: z.enum(['0', '1']),
-						consent_type: z.enum(['0', '1']),
-						consent_len: z.string().max(5).regex(/^\d+$/),
-						consent: z.string().max(7000),
-						signed_person_info_req_len: z.string().max(5).regex(/^\d+$/),
+							.regex(/^[A-Za-z0-9+/=]+$/, {
+								message: 'password does NOT match the specification, must be Base64 encoded - CMS Signed Data',
+							}),
+						auth_type: z.enum(['0', '1'], {
+							message: 'auth_type does NOT match the specification, possible authentication flow manipulation',
+						}),
+						consent_type: z.enum(['0', '1'], {
+							message: 'consent_type does NOT match the specification, possible consent flow manipulation',
+						}),
+						consent_len: z.string().max(5).regex(/^\d+$/, {
+							message: 'consent_len does NOT match the specification, possible length manipulation attack',
+						}),
+						consent: z.string().max(7000, {
+							message: 'consent does NOT match the specification, possible consent manipulation attack',
+						}),
+						signed_person_info_req_len: z.string().max(5).regex(/^\d+$/, {
+							message:
+								'signed_person_info_req_len does NOT match the specification, possible length manipulation attack',
+						}),
 						signed_person_info_req: z
 							.string()
 							.max(10000)
-							.regex(/^[A-Za-z0-9+/=]+$/, 'Must be Base64 encoded - CMS Signed Data'),
+							.regex(/^[A-Za-z0-9+/=]+$/, {
+								message:
+									'signed_person_info_req does NOT match the specification, possible OAuth Parameter Injection or Content Type Confusion Attack',
+							}),
 						consent_nonce: z
 							.string()
 							.max(30)
-							.regex(/^[A-Za-z0-9+/=\-_]+$/, 'Must be Base64url-safe encoded'),
+							.regex(/^[A-Za-z0-9+/=\-_]+$/, {
+								message:
+									'consent_nonce does NOT match the specification, possible OAuth Parameter Injection or Content Type Confusion Attack',
+							}),
 						ucpid_nonce: z
 							.string()
 							.max(30)
-							.regex(/^[A-Za-z0-9+/=\-_]+$/, 'Must be Base64url-safe encoded'),
+							.regex(/^[A-Za-z0-9+/=\-_]+$/, {
+								message:
+									'ucpid_nonce does NOT match the specification, possible OAuth Parameter Injection or Content Type Confusion Attack',
+							}),
 						cert_tx_id: z
 							.string()
 							.max(40)
-							.regex(/^[a-z0-9\-_]+$/),
+							.regex(/^[a-z0-9\-_]+$/, {
+								message:
+									'cert_tx_id does NOT match the specification, possible OAuth Parameter Injection or Content Type Confusion Attack',
+							}),
 						service_id: z
 							.string()
 							.max(22)
-							.regex(/^[A-Z0-9]+$/)
-							.describe('Format: Agency code (10) + registration date (8) + order (4)'),
+							.regex(/^[a-z0-9]+$/, {
+								message:
+									'service_id does NOT match the specification, possible OAuth Parameter Injection or Content Type Confusion Attack',
+							}),
 					}),
 				}),
 				response: z.object({
 					headers: SpecificationBasedDetection.defaultResponseHeadersSchema,
 					body: z.object({
-						token_type: z
-							.string()
-							.min(4)
-							.max(6)
-							.refine((val) => val === 'Bearer'),
-						access_token: z.string().max(1500),
-						expires_in: z.number().max(999999999),
-						scope: z
-							.string()
-							.min(2)
-							.max(6)
-							.refine((val) => val === 'ca'),
+						rsp_code: z.string().max(30, {
+							message: 'rsp_code does NOT match the specification, possible Response Code Manipulation Attack',
+						}),
+						rsp_msg: z.string().max(450, {
+							message: 'rsp_msg does NOT match the specification, possible Response Message Manipulation Attack',
+						}),
+						tx_id: z.string().length(74, {
+							message: 'tx_id does NOT match the specification, possible Transaction ID Forgery Attack',
+						}),
+						token_type: z.string().refine((val) => val === 'Bearer', {
+							message:
+								'token_type does NOT match the specification, possible Token Type Manipulation or Confusion Attack',
+						}),
+						access_token: z.string().max(1500, {
+							message: 'access_token does NOT match the specification, possible token manipulation',
+						}),
+						expires_in: z.number().max(999999999, {
+							message: 'expires_in does NOT match the specification, possible token lifetime manipulation',
+						}),
+						refresh_token: z.string().max(1500, {
+							message: 'refresh_token does NOT match the specification, possible token manipulation',
+						}),
+						refresh_token_expires_in: z.number().max(999999999, {
+							message:
+								'refresh_token_expires_in does NOT match the specification, possible token lifetime manipulation',
+						}),
 					}),
 				}),
 			},
@@ -586,37 +625,68 @@ class SpecificationBasedDetection {
 		'/api/v2/bank/accounts/deposit/basic': {
 			POST: {
 				request: z.object({
-					headers: SpecificationBasedDetection.defaultRequestHeadersSchema.extend({
-						'content-type': z.string().max(50),
-					}),
+					headers: SpecificationBasedDetection.defaultRequestHeadersSchema.extend(
+						SpecificationBasedDetection.withTokenRequestHeadersSchema
+					),
 					body: z.object({
-						org_code: z.string().length(10),
-						account_num: z.string().max(20),
-						search_timestamp: z.number().max(99999999999999),
+						org_code: z.string().length(10, {
+							message: 'org_code does NOT match the specification, possible organization code manipulation',
+						}),
+						account_num: z.string().min(9).max(20, {
+							message: 'account_num does NOT match the specification, possible account number manipulation',
+						}),
+						search_timestamp: z.string().length(14).regex(/^\d+$/, {
+							message: 'search_timestamp does NOT match the specification, possible timestamp manipulation',
+						}),
 					}),
 				}),
 				response: z.object({
 					headers: SpecificationBasedDetection.defaultResponseHeadersSchema,
 					body: z.object({
-						rsp_code: z.string().max(5),
-						rsp_msg: z.string().max(450),
-						search_timestamp: z.number().max(99999999999999),
-						basic_cnt: z.number().max(999),
-						seqno: z.string().max(7),
+						rsp_code: z.string().max(5, {
+							message: 'rsp_code does NOT match the specification, possible response code manipulation',
+						}),
+						rsp_msg: z.string().max(450, {
+							message: 'rsp_msg does NOT match the specification, possible response message manipulation',
+						}),
+						search_timestamp: z.string().length(14).regex(/^\d+$/, {
+							message: 'search_timestamp does NOT match the specification, possible timestamp manipulation',
+						}),
+						basic_cnt: z.number().max(999, {
+							message: 'basic_cnt does NOT match the specification, possible count manipulation',
+						}),
+						seqno: z
+							.string()
+							.max(7, {
+								message: 'seqno does NOT match the specification, possible sequence number manipulation',
+							})
+							.optional(),
 						basic_list: z.array(
 							z.object({
 								currency_code: z
 									.string()
 									.max(3)
-									.refine((val) => ['KRW', 'USD', 'EUR', 'CNY', 'JPY'].includes(val)),
+									.refine((val) => ['KRW', 'USD', 'EUR', 'CNY', 'JPY'].includes(val), {
+										message: 'currency_code does NOT match the specification',
+									}),
 								saving_method: z
 									.string()
 									.max(10)
-									.refine((val) => ['METHOD_01', 'METHOD_02', 'METHOD_03'].includes(val)),
-								issue_date: z.date(),
-								exp_date: z.date(),
-								commit_amt: z.number().max(Number.MAX_SAFE_INTEGER),
-								monthly_paid_in_amt: z.number().max(Number.MAX_SAFE_INTEGER),
+									.refine((val) => ['METHOD_01', 'METHOD_02', 'METHOD_03'].includes(val), {
+										message: 'saving_method does NOT match the specification',
+									}),
+								issue_date: z.date({
+									message: 'issue_date does NOT match the specification, invalid date format',
+								}),
+								exp_date: z.date({
+									message: 'exp_date does NOT match the specification, invalid date format',
+								}),
+								commit_amt: z.number().max(Number.MAX_SAFE_INTEGER, {
+									message: 'commit_amt does NOT match the specification, possible amount manipulation',
+								}),
+								monthly_paid_in_amt: z.number().max(Number.MAX_SAFE_INTEGER, {
+									message: 'monthly_paid_in_amt does NOT match the specification, possible amount manipulation',
+								}),
 							})
 						),
 					}),
@@ -626,33 +696,58 @@ class SpecificationBasedDetection {
 		'/api/v2/bank/accounts/deposit/detail': {
 			POST: {
 				request: z.object({
-					headers: SpecificationBasedDetection.defaultRequestHeadersSchema.extend({
-						'content-type': z.string().max(50),
-					}),
+					headers: SpecificationBasedDetection.defaultRequestHeadersSchema.extend(
+						SpecificationBasedDetection.withTokenRequestHeadersSchema
+					),
 					body: z.object({
-						org_code: z.string().length(10),
-						account_num: z.string().length(20),
+						org_code: z.string().length(10, {
+							message: 'org_code does NOT match the specification, possible organization code manipulation',
+						}),
+						account_num: z.string().min(9).max(20, {
+							message: 'account_num does NOT match the specification, possible account number manipulation',
+						}),
 						seqno: z.string().max(7).optional(),
-						search_timestamp: z.string().length(14),
+						search_timestamp: z.string().length(14).regex(/^\d+$/, {
+							message: 'search_timestamp does NOT match the specification, possible timestamp manipulation',
+						}),
 					}),
 				}),
 				response: z.object({
+					headers: SpecificationBasedDetection.defaultResponseHeadersSchema,
 					body: z.object({
-						rsp_code: z.string().max(5),
-						rsp_msg: z.string().max(450),
-						search_timestamp: z.number().max(14),
-						detail_cnt: z.number().max(999),
+						rsp_code: z.string().max(5, {
+							message: 'rsp_code does NOT match the specification, possible response code manipulation',
+						}),
+						rsp_msg: z.string().max(450, {
+							message: 'rsp_msg does NOT match the specification, possible response message manipulation',
+						}),
+						search_timestamp: z.string().length(14).regex(/^\d+$/, {
+							message: 'search_timestamp does NOT match the specification, possible timestamp manipulation',
+						}),
+						detail_cnt: z.number().max(999, {
+							message: 'detail_cnt does NOT match the specification, possible count manipulation',
+						}),
 						detail_list: z.array(
 							z.object({
 								currency_code: z
 									.string()
 									.max(3)
 									.toUpperCase()
-									.refine((val) => ['KRW', 'USD', 'EUR', 'CNY', 'JPY'].includes(val)),
-								Balance_amt: z.number().max(Number.MAX_SAFE_INTEGER),
-								withdrawable_amt: z.number().max(Number.MAX_SAFE_INTEGER),
-								offered_rate: z.number().max(9999999),
-								last_paid_in_cnt: z.number().max(999999),
+									.refine((val) => ['KRW', 'USD', 'EUR', 'CNY', 'JPY'].includes(val), {
+										message: 'currency_code does NOT match the specification',
+									}),
+								Balance_amt: z.number().max(Number.MAX_SAFE_INTEGER, {
+									message: 'Balance_amt does NOT match the specification, possible balance manipulation',
+								}),
+								withdrawable_amt: z.number().max(Number.MAX_SAFE_INTEGER, {
+									message: 'withdrawable_amt does NOT match the specification, possible amount manipulation',
+								}),
+								offered_rate: z.number().max(9999999, {
+									message: 'offered_rate does NOT match the specification, possible rate manipulation',
+								}),
+								last_paid_in_cnt: z.number().max(999999, {
+									message: 'last_paid_in_cnt does NOT match the specification, possible count manipulation',
+								}),
 							})
 						),
 					}),
@@ -661,7 +756,98 @@ class SpecificationBasedDetection {
 		},
 	};
 
+	private readonly requestHistory: Map<string, number[]> = new Map();
+
+	private isRateLimitExceeded(clientId: string): boolean {
+		const now = Date.now();
+		const windowSize = 60000;
+		let requests = this.requestHistory.get(clientId) || [];
+		requests = requests.filter((timestamp) => now - timestamp < windowSize);
+		requests.push(now);
+		this.requestHistory.set(clientId, requests);
+		return requests.length > SpecificationBasedDetection.rateLimiting.rateLimiting.maxRequestsPerMinute;
+	}
+
+	private isPayloadSizeExceeded(entry: LogEntry): { isExceeded: boolean; overloadedFields: string[] } {
+		const maxSize = SpecificationBasedDetection.rateLimiting.rateLimiting.maxPayloadSize;
+		const overloadedFields: string[] = [];
+
+		if (entry.request && entry.requestBody) {
+			console.log('entry.request', entry.request);
+			// Check all fields individually
+			const fieldsToCheck = {
+				url: entry.request.url,
+				method: entry.request.method,
+				authorization: entry.request.authorization,
+				'user-agent': entry.request['user-agent'],
+				'x-api-tran-id': entry.request['x-api-tran-id'],
+				'x-api-type': entry.request['x-api-type'],
+				'x-csrf-token': entry.request['x-csrf-token'],
+				cookie: entry.request.cookie,
+				'set-cookie': entry.request['set-cookie'],
+				'content-length': entry.request['content-length'],
+				body: entry.request.body,
+			};
+
+			for (const [key, value] of Object.entries(fieldsToCheck)) {
+				console.log('key', key);
+				if (value && typeof value === 'string') {
+					const size = Buffer.from(String(value)).length;
+					if (size > maxSize) {
+						console.log('value', value, size);
+						overloadedFields.push(key);
+						entry.request[key as keyof RequestData] = 'overload here';
+					}
+				} else {
+					const toString = JSON.stringify(value);
+					const size = Buffer.from(toString).length;
+					if (size > maxSize) {
+						console.log('value', value, size);
+						overloadedFields.push(key);
+						entry.request[key as keyof RequestData] = 'overload here';
+					}
+				}
+			}
+
+			// Handle additional fields from index signature
+			const standardKeys = Object.keys(fieldsToCheck);
+			Object.entries(entry.request).forEach(([key, value]) => {
+				if (!standardKeys.includes(key)) {
+					const size = Buffer.from(String(value)).length;
+					if (size > maxSize) {
+						overloadedFields.push(key);
+						entry.request[key] = 'overload here';
+					}
+				}
+			});
+		}
+
+		return {
+			isExceeded: overloadedFields.length > 0,
+			overloadedFields,
+		};
+	}
+
 	detect(entry: LogEntry): DetectionResult {
+		// Check rate limiting
+		const clientId = entry.request['x-api-tran-id'];
+		if (this.isRateLimitExceeded(clientId)) {
+			return {
+				detected: true,
+				reason: 'Rate limit exceeded',
+			};
+		}
+
+		// Check payload size
+		const payloadCheck = this.isPayloadSizeExceeded(entry);
+		console.log('payload check', payloadCheck);
+		if (payloadCheck.isExceeded) {
+			return {
+				detected: true,
+				reason: `Payload size exceeded in fields: ${payloadCheck.overloadedFields.join(', ')}`,
+			};
+		}
+
 		try {
 			const pathname = new URL(entry.request.url).pathname;
 			const method = entry.request.method;
@@ -761,84 +947,59 @@ function parseLogLines(lines: string[]): LogEntry[] {
 }
 
 // Logging Function
-async function logDetectionResult(
-	entry: LogEntry,
-	detectionType: 'Signature' | 'Specification',
-	result: DetectionResult
-): Promise<void> {
-	if (
-		!fs.existsSync(filePath('/public/signature_detection_logs.csv')) ||
-		!fs.existsSync(filePath('/public/specification_detection_logs.csv'))
-	) {
+async function logDetectionResult(entry: LogEntry, result: DetectionResult): Promise<void> {
+	if (!fs.existsSync(filePath('/public/operator_hybrid_detection_logs.csv'))) {
 		fs.writeFileSync(
-			filePath('/public/signature_detection_logs.csv'),
-			'timestamp,detectionType,detected,reason,request,response\n'
-		);
-		fs.writeFileSync(
-			filePath('/public/specification_detection_logs.csv'),
+			filePath('/public/operator_hybrid_detection_logs.csv'),
 			'timestamp,detectionType,detected,reason,request,response\n'
 		);
 	}
 
-	if (detectionType === 'Signature') {
-		const csvWriter1 = createCsvWriter({
-			path: filePath('/public/signature_detection_logs.csv'),
-			append: true,
-			header: detectionCSVLoggerHeader,
-		});
+	const csvWriter2 = createCsvWriter({
+		path: filePath('/public/operator_hybrid_detection_logs.csv'),
+		append: true,
+		header: detectionCSVLoggerHeader,
+	});
 
-		const record: LogRecord = {
-			timestamp: new Date().toISOString(),
-			detectionType,
-			detected: result.detected,
-			reason: result.reason,
-			request: JSON.stringify(entry.request),
-			response: JSON.stringify(entry.response),
-		};
+	const record: LogRecord = {
+		timestamp: new Date().toISOString(),
+		detectionType: 'Hybrid',
+		detected: result.detected,
+		reason: result.reason,
+		request: JSON.stringify(entry.request),
+		response: JSON.stringify(entry.response),
+	};
 
-		await csvWriter1.writeRecords([record]);
-	} else if (detectionType === 'Specification') {
-		const csvWriter2 = createCsvWriter({
-			path: filePath('/public/specification_detection_logs.csv'),
-			append: true,
-			header: detectionCSVLoggerHeader,
-		});
-
-		const record: LogRecord = {
-			timestamp: new Date().toISOString(),
-			detectionType,
-			detected: result.detected,
-			reason: result.reason,
-			request: JSON.stringify(entry.request),
-			response: JSON.stringify(entry.response),
-		};
-
-		await csvWriter2.writeRecords([record]);
-	}
+	await csvWriter2.writeRecords([record]);
 }
 
 // Main Detection Function
 async function detectIntrusions(entry: LogEntry): Promise<void> {
-	const signatureDetector = new SignatureBasedDetection();
 	const specificationDetector = new SpecificationBasedDetection();
-
-	const signatureResult = signatureDetector.detect(entry);
 	const specificationResult = specificationDetector.detect(entry);
 
-	if (signatureResult.detected) {
-		await logDetectionResult(entry, 'Signature', signatureResult);
-		console.log('########## ⚠️ Intrusion Detected! ##########');
-		console.log('Signature-based:', signatureResult);
-	} else {
-		await logDetectionResult(entry, 'Signature', signatureResult);
-	}
-
 	if (specificationResult.detected) {
-		await logDetectionResult(entry, 'Specification', specificationResult);
+		console.log('########## Primary (Specification-based) Security Complete! ##########');
+		await logDetectionResult(entry, specificationResult);
 		console.log('########## ⚠️ Intrusion Detected! ##########');
 		console.log('Specification-based:', specificationResult);
 	} else {
-		await logDetectionResult(entry, 'Specification', specificationResult);
+		// await logDetectionResult(entry, 'Specification', specificationResult);
+		console.log('########## Primary (Specification-based) Security Complete! ##########');
+		console.log('########## Initializing Secondary (Signature-based) Detection! ##########');
+		console.log('########## Matching attack patterns... ##########');
+		const signatureDetector = new SignatureBasedDetection();
+		const signatureResult = signatureDetector.detect(entry);
+
+		if (signatureResult.detected) {
+			await logDetectionResult(entry, signatureResult);
+			console.log('########## ⚠️ Intrusion Detected! ##########');
+			console.log('Signature-based:', signatureResult);
+			console.log('########## Secondary (Signature-based) Security Complete! ##########');
+		} else {
+			await logDetectionResult(entry, signatureResult);
+			console.log('########## Secondary (Signature-based) Security Complete! ##########');
+		}
 	}
 }
 
@@ -856,7 +1017,7 @@ async function initializeCSV(filePath: string): Promise<void> {
 // Main Function to Start Detection
 async function startDetection(logFilePath: string): Promise<void> {
 	try {
-		await initializeCSV(filePath('/public/detection_logs.csv'));
+		await initializeCSV(filePath('/public/operator_detection_logs.csv'));
 		const filePosition = new FilePosition();
 
 		const runDetectionCycle = async () => {

@@ -21,6 +21,16 @@ export type BodyIA103 = {
 	sign_tx_id: string;
 };
 
+export type BodyIA104 = {
+	tx_id: string;
+	cert_tx_id: string;
+	signed_consent_len: number;
+	signed_consent: string;
+	consent_type: string;
+	consent_len: number;
+	consent: string;
+};
+
 export type BodyIA002 = {
 	tx_id: string;
 	org_code: string;
@@ -57,22 +67,30 @@ export type SignedConsent = {
 	signed_consent_len: number;
 };
 
+// Initialize Prisma and constants
 const prisma = new PrismaClient();
-const otherBankAPI = 'http://localhost:4000';
-const orgCode = 'ORG2025002';
-const otherOrgCode = 'ORG2025001';
-const clientId = 'ORG2025002-CLIENT-ID';
-const clientSecret = 'ORG2025002-CLIENT-SECRET';
+const otherBankAPI = process.env.OTHER_BANK_API || '';
+const otherOrgCode = process.env.OTHER_ORG_CODE || '';
+const orgCode = process.env.ORG_CODE || '';
+const caCode = process.env.CA_CODE || '';
+const orgSerialCode = process.env.ORG_SERIAL_CODE || '';
+const clientId = process.env.CLIENT_ID || '';
+const clientSecret = process.env.CLIENT_SECRET || '';
 
-export const generateTIN = (prefix: string) => {
-	const date = new Date();
+export const generateTIN = (subject: string): string => {
+	//subject classification code
+	try {
+		const date = new Date();
+		// grant code 10 uppercase letters + numbers
+		const grantCode = faker.string.alphanumeric(14).toUpperCase();
 
-	const timestamp = date
-		.toISOString()
-		.replace(/[-:.TZ]/g, '')
-		.slice(0, 14); // YYYYMMDDHHMMSS
+		const xApiTranId = `${orgCode}${subject}${grantCode}`;
 
-	return prefix + timestamp;
+		return xApiTranId;
+	} catch (error) {
+		console.error('Error generating TIN:', error);
+		return '00000000000000';
+	}
 };
 
 export function timestamp(date: Date): string {
@@ -90,16 +108,16 @@ export const getIA101 = async () => {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/x-www-form-urlencoded',
-				'x-api-tran-id': generateTIN('IA101'),
+				'x-api-tran-id': generateTIN('S'),
 			},
 			body: new URLSearchParams({
-				grant_type: 'client_credential',
+				grant_type: 'client_credentials',
 				client_id: clientId,
 				client_secret: clientSecret,
 				scope: 'ca',
 			}),
 		};
-
+		console.log('requesting token from certification authority');
 		const response = await fetch('http://localhost:3000/api/oauth/2.0/token', options);
 
 		if (!response.ok) {
@@ -107,26 +125,28 @@ export const getIA101 = async () => {
 			throw new Error(`HTTP error! Status: ${response.status}`);
 		}
 
-		const data = await response.json();
-		return data;
+		const res = await response.json();
+		return res;
 	} catch (error) {
 		console.error('Error:', error);
 		throw error;
 	}
 };
 
+// Normal simulation for IA102
 export const getIA102 = async (accessToken: string, body: BodyIA102) => {
 	const options = {
 		method: 'POST',
 		headers: {
 			'Access-Control-Allow-Origin': '*',
-			'Content-Type': 'application/json',
-			'x-api-tran-id': generateTIN('IA102'),
+			'Content-Type': 'application/json;charset=UTF-8',
+			'x-api-tran-id': generateTIN('S'),
 			Authorization: `Bearer ${accessToken}`,
 		},
 		body: JSON.stringify(body),
 	};
 
+	console.log('requesting sign request from certification authority');
 	const response = await fetch(`http://localhost:3000/api/ca/sign_request`, options);
 
 	if (!response.ok) {
@@ -144,46 +164,56 @@ export const getIA103 = async (accessToken: string, body: BodyIA103) => {
 		method: 'POST',
 		headers: {
 			'Access-Control-Allow-Origin': '*',
-			'Content-Type': 'application/json',
-			'x-api-tran-id': generateTIN('IA103'),
+			'Content-Type': 'application/json;charset=UTF-8',
+			'x-api-tran-id': generateTIN('S'),
 			Authorization: `Bearer ${accessToken}`,
 		},
 		body: JSON.stringify(body),
 	};
-
+	console.log('requesting sign result from certification authority');
 	const response = await fetch(`http://localhost:3000/api/ca/sign_result`, options);
 
 	if (!response.ok) {
 		// Handle HTTP errors
 		throw new Error(`HTTP error on IA103! Status: ${response.status}`);
 	}
-
 	const res = await response.json();
-
 	return res;
 };
 
 export const getIA002 = async (body: BodyIA002) => {
-	// Assumption: Mydata app is looking for api of the bank with orgCode to get the access token
-
 	const options = {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/x-www-form-urlencoded',
-			'x-api-tran-id': generateTIN('IA002'),
+			'x-api-tran-id': generateTIN('S'),
 		},
 		body: new URLSearchParams(body),
 	};
-
 	const response = await fetch(`${otherBankAPI}/api/oauth/2.0/token`, options);
 
 	if (!response.ok) {
 		// Handle HTTP errors
 		throw new Error(`HTTP error on IA002! Status: ${response.status}`);
 	}
-
 	const res = await response.json();
+	return res;
+};
 
+export const getIA104 = async (accessToken: string, body: BodyIA104) => {
+	const options = {
+		method: 'POST',
+		headers: {
+			'Access-Control-Allow-Origin': '*',
+			'Content-Type': 'application/json;charset=UTF-8',
+			'x-api-tran-id': generateTIN('S'),
+			Authorization: `Bearer ${accessToken}`,
+		},
+		body: JSON.stringify(body),
+	};
+
+	const response = await fetch(`http://localhost:3000/api/ca/sign_verification`, options);
+	const res = await response.json();
 	return res;
 };
 
@@ -193,10 +223,11 @@ export async function getSupport001() {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/x-www-form-urlencoded',
-				'x-api-tran-id': generateTIN('SU001'),
+				'x-api-tran-id': generateTIN('S'),
+				Authorization: '',
 			},
 			body: new URLSearchParams({
-				grant_type: 'client_credential',
+				grant_type: 'client_credentials',
 				client_id: clientId,
 				client_secret: clientSecret,
 				scope: 'manage',
@@ -219,16 +250,16 @@ export async function getSupport001() {
 }
 
 export async function getSupport002() {
-	const token = await getSupport001();
+	const support001Response = await getSupport001();
 
-	const { access_token } = token;
+	const { access_token } = support001Response?.body;
 
 	const options = {
 		method: 'GET',
 		headers: {
 			'Access-Control-Allow-Origin': '*',
-			'Content-Type': 'application/json',
-			'x-api-tran-id': generateTIN('SU002'),
+			'Content-Type': 'application/json;charset=UTF-8',
+			'x-api-tran-id': generateTIN('S'),
 			Authorization: `Bearer ${access_token}`,
 		},
 	};
@@ -248,9 +279,9 @@ export async function getSupport002() {
 export const generateBodyIA102 = async (account: any) => {
 	// Fetch accounts that belong to the organization
 
-	const caCode = faker.helpers.arrayElement(['CA20250001']);
+	const caCode = faker.helpers.arrayElement(['certauth00']);
 	const newTimestamp = timestamp(new Date());
-	const serialNum = faker.helpers.arrayElement(['BASA20240204', 'BABB20230106']);
+	const serialNum = faker.helpers.arrayElement(['anyaserial00', 'bondserial00']);
 
 	const signTxId = `${orgCode}_${caCode}_${newTimestamp}_${serialNum}`;
 
@@ -271,13 +302,12 @@ export const generateBodyIA102 = async (account: any) => {
 	]);
 
 	const deviceCode = faker.helpers.arrayElement(['PC', 'MO', 'TB']);
-
 	const relayAgencyCode = faker.helpers.arrayElement([
-		'RA20250001',
-		'RA20250002',
-		'RA20250003',
-		'RA20250004',
-		'RA20250005',
+		'ra20250001',
+		'ra20250002',
+		'ra20250003',
+		'ra20250004',
+		'ra20250005',
 	]);
 
 	const consentTitles = [
@@ -287,7 +317,6 @@ export const generateBodyIA102 = async (account: any) => {
 	];
 
 	const consentValues = ['consent-001', 'consent-002', 'consent-003', 'consent-004', 'consent-005'];
-
 	// Randomly determine how many consents to generate (1 to 3)
 	const numConsents = faker.number.int({ min: 1, max: 3 });
 
@@ -327,7 +356,7 @@ export const generateBodyIA102 = async (account: any) => {
 export const generateBodyIA002 = async (certTxId: string, consent_list: any, signed_consent_list: any) => {
 	// Assumed that signed_consent is already decoded from base64
 
-	const txId = signed_consent_list[0].tx_id;
+	const txId = signed_consent_list[0]?.tx_id;
 
 	const orgCode = txId.split('_')[0];
 	const ipCode = txId.split('_')[1];
@@ -414,14 +443,29 @@ export const generateBodyIA002 = async (certTxId: string, consent_list: any, sig
 	return bodyIA002;
 };
 
+const generateBodyIA104 = async (certTxId: string, consent_list: any, signed_consent_list: any) => {
+	const txId = signed_consent_list[0].tx_id;
+
+	const bodyIA104 = {
+		tx_id: txId,
+		cert_tx_id: certTxId,
+		signed_consent_len: signed_consent_list[0].signed_consent_len,
+		signed_consent: signed_consent_list[0].signed_consent,
+		consent_type: '1',
+		consent_len: consent_list[0].consent_len,
+		consent: consent_list[0].consent,
+	};
+
+	return bodyIA104;
+};
+
 const getAccountsBasic = async (orgCode: string, accountNum: string, accessToken: string) => {
 	// Assumption: Mydata app is looking for api of the bank with orgCode to get the access token
-
 	const options = {
 		method: 'POST',
 		headers: {
-			'Content-Type': 'application/json',
-			'x-api-tran-id': generateTIN('AB001'),
+			'Content-Type': 'application/json;charset=UTF-8',
+			'x-api-tran-id': generateTIN('S'),
 			'x-api-type': faker.helpers.arrayElement(['regular', 'irregular']),
 			Authorization: `Bearer ${accessToken}`,
 		},
@@ -434,24 +478,21 @@ const getAccountsBasic = async (orgCode: string, accountNum: string, accessToken
 	};
 
 	const response = await fetch(`${otherBankAPI}/api/v2/bank/accounts/deposit/basic`, options);
-
 	if (!response.ok) {
 		// Handle HTTP errors
 		throw new Error(`HTTP error! Status: ${response.status}`);
 	}
-
 	const data = await response.json();
 	return data;
 };
 
 const getAccountsDetail = async (orgCode: string, accountNum: string, accessToken: string) => {
 	// Assumption: Mydata app is looking for api of the bank with orgCode to get the access token
-
 	const options = {
 		method: 'POST',
 		headers: {
-			'Content-Type': 'application/json',
-			'x-api-tran-id': generateTIN('AD001'),
+			'Content-Type': 'application/json;charset=UTF-8',
+			'x-api-tran-id': generateTIN('S'),
 			'x-api-type': faker.helpers.arrayElement(['regular', 'irregular']),
 			Authorization: `Bearer ${accessToken}`,
 		},
@@ -464,12 +505,10 @@ const getAccountsDetail = async (orgCode: string, accountNum: string, accessToke
 	};
 
 	const response = await fetch(`${otherBankAPI}/api/v2/bank/accounts/deposit/detail`, options);
-
 	if (!response.ok) {
 		// Handle HTTP errors
 		throw new Error(`HTTP error! Status: ${response.status}`);
 	}
-
 	const data = await response.json();
 	return data;
 };
@@ -503,15 +542,16 @@ async function main() {
 	// Consent List: "Consent Request for Transmission", "Consent to Collection and Use of Personal Information", "Consent to Provide Personal Information"
 
 	try {
-		const token = await getIA101();
-		const { access_token } = token;
+		const IA101Response = await getIA101();
+
+		const { access_token } = IA101Response?.body;
 
 		if (!access_token) {
 			throw new Error('Error fetching access token in IA101');
 		}
 
 		// add delay to simulate user interaction
-		await new Promise((resolve) => setTimeout(resolve, 500));
+		await new Promise((resolve) => setTimeout(resolve, 2000));
 
 		// Get all the accounts that belong to the organization
 		const accounts = await prisma.account.findMany({
@@ -535,11 +575,11 @@ async function main() {
 		}
 
 		// add delay to simulate user interaction
-		await new Promise((resolve) => setTimeout(resolve, 500));
+		await new Promise((resolve) => setTimeout(resolve, 4000));
 
 		const bodyIA103: BodyIA103 = {
 			sign_tx_id: bodyIA102.sign_tx_id,
-			cert_tx_id: responseIA102.cert_tx_id,
+			cert_tx_id: responseIA102?.body?.cert_tx_id,
 		};
 
 		const responseIA103 = await getIA103(access_token, bodyIA103);
@@ -548,17 +588,16 @@ async function main() {
 		}
 
 		// add delay to simulate user interaction
-		await new Promise((resolve) => setTimeout(resolve, 500));
+		await new Promise((resolve) => setTimeout(resolve, 4000));
 
 		// After the integrated certification has been completed from Certification Authority, the response will
 		// be sent to the bank app (Information Provider) to complete the process
 		// this will provide access_token to allow access to the user's data
 		// Interaction 3: User wants to access their data from other banks
 
-		const certTxId = responseIA102.certTxId;
-
-		const signedConsentList = responseIA103.signed_consent_list;
-		const consentList = bodyIA102.consent_list;
+		const certTxId = responseIA102?.body?.cert_tx_id;
+		const signedConsentList = responseIA103?.body?.signed_consent_list;
+		const consentList = bodyIA102?.consent_list;
 
 		const bodyIA002 = await generateBodyIA002(certTxId, consentList, signedConsentList);
 		const responseIA002 = await getIA002(bodyIA002);
@@ -566,36 +605,54 @@ async function main() {
 		if (!responseIA002) {
 			throw new Error('Error request for access token in IA002');
 		}
-
 		// add delay to simulate user interaction
-		await new Promise((resolve) => setTimeout(resolve, 500));
+		await new Promise((resolve) => setTimeout(resolve, 2000));
+		// Interaction 4: Certification authority will provide a sign verification to the bank, this will include boolean result in the response
+		const bodyIA104 = await generateBodyIA104(certTxId, consentList, signedConsentList);
+		const responseIA104 = await getIA104(responseIA002?.body?.access_token, bodyIA104);
 
-		// Interaction 4: User wants to view their accounts from other banks
-		// Assumptions: User has already connected their accounts to the Mydata app
-		// User can either view basic account information or detailed account information or both
-
-		const isGetBasic = faker.helpers.arrayElement([true, false]);
-		const isGetDetail = faker.helpers.arrayElement([true, false]);
-
-		if (isGetBasic) {
-			const accountsBasic = await getAccountsBasic(orgCode, accountNum, responseIA002.access_token);
-			if (!accountsBasic) {
-				throw new Error('Error fetching basic account information');
-			}
-
-			// add delay to simulate user interaction
-			await new Promise((resolve) => setTimeout(resolve, 500));
+		if (!responseIA104) {
+			throw new Error('Error sign verification in IA104');
 		}
 
-		if (isGetDetail) {
-			// Call for detailed account information
-			const accountsDetail = await getAccountsDetail(orgCode, accountNum, responseIA002.access_token);
-			if (!accountsDetail) {
-				throw new Error('Error fetching detailed account information');
+		const { result, user_ci } = responseIA104?.body;
+
+		if (!result) {
+			throw new Error('Sign verification result denied in IA104');
+		}
+
+		// Interaction 5: User wants to view their accounts from other banks
+		// Assumptions: User has already connected their accounts to the Mydata app
+		// User can either view basic account information or detailed account information or both
+		else if (result) {
+			const isGetBasic = faker.helpers.arrayElement([true, false]);
+			const isGetDetail = faker.helpers.arrayElement([true, false]);
+
+			console.log('responseIA104', result, user_ci);
+
+			if (isGetBasic) {
+				// Call for basic account information
+				console.log('Getting basic account information');
+				const accountsBasic = await getAccountsBasic(orgCode, accountNum, responseIA002.access_token);
+				if (!accountsBasic) {
+					throw new Error('Error fetching basic account information');
+				}
+
+				// add delay to simulate user interaction
+				await new Promise((resolve) => setTimeout(resolve, 2000));
 			}
 
-			// add delay to simulate user interaction
-			await new Promise((resolve) => setTimeout(resolve, 500));
+			if (isGetDetail) {
+				// Call for detailed account information
+				console.log('Getting detailed account information');
+				const accountsDetail = await getAccountsDetail(orgCode, accountNum, responseIA002.access_token);
+				if (!accountsDetail) {
+					throw new Error('Error fetching detailed account information');
+				}
+
+				// add delay to simulate user interaction
+				await new Promise((resolve) => setTimeout(resolve, 2000));
+			}
 		}
 	} catch (error) {
 		console.error('Error within interaction', error);
