@@ -44,10 +44,10 @@ class LogMonitor {
 	private readonly maxRecords: number;
 
 	constructor(
-		logPath: string = filePath('/public/mo_formatted_logs.csv'),
-		specificationLogPath: string = filePath('/public/operator_specification_detection_logs.csv'),
-		signatureLogPath: string = filePath('/public/operator_signature_detection_logs.csv'),
-		hybridLogPath: string = filePath('/public/operator_hybrid_detection_logs.csv'),
+		logPath: string = filePath('/public/ca_formatted_logs.csv'),
+		specificationLogPath: string = filePath('/public/specification_detection_logs.csv'),
+		signatureLogPath: string = filePath('/public/signature_detection_logs.csv'),
+		hybridLogPath: string = filePath('/public/hybrid_detection_logs.csv'),
 		maxRecords: number = 10000
 	) {
 		this.logPath = logPath;
@@ -296,10 +296,10 @@ class LogMonitor {
 
 // Usage
 const monitor = new LogMonitor(
-	filePath('/public/mo_formatted_logs.csv'),
-	filePath('/public/operator_signature_detection_logs.csv'),
-	filePath('/public/operator_specification_detection_logs.csv'),
-	filePath('/public/operator_hybrid_detection_logs.csv'),
+	filePath('/public/ca_formatted_logs.csv'),
+	filePath('/public/signature_detection_logs.csv'),
+	filePath('/public/specification_detection_logs.csv'),
+	filePath('/public/hybrid_detection_logs.csv'),
 	10000
 );
 monitor.start(360000);

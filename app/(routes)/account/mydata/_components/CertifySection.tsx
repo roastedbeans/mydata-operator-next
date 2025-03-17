@@ -16,7 +16,7 @@ const CertifySection = () => {
 
 		if (!data) return;
 
-		const orgs = data?.org_list.filter((org: Organization) => org.orgCode !== process.env.NEXT_PUBLIC_ORG_CODE);
+		const orgs = data?.org_list.filter((org: Organization) => org.orgCode !== process.env.NEXT_PUBLIC_BOND_ORG_CODE);
 		setOrgs(orgs);
 	};
 

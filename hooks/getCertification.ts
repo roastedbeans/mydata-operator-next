@@ -11,8 +11,8 @@ export const getIA101 = async () => {
 			},
 			body: new URLSearchParams({
 				grant_type: 'client_credential',
-				client_id: process.env.NEXT_PUBLIC_CLIENT_ID || '',
-				client_secret: process.env.NEXT_PUBLIC_CLIENT_SECRET || '',
+				client_id: process.env.NEXT_PUBLIC_BOND_CLIENT_ID || '',
+				client_secret: process.env.NEXT_PUBLIC_BOND_CLIENT_SECRET || '',
 				scope: 'ca',
 			}),
 		};

@@ -105,13 +105,13 @@ export type SignedConsent = {
 
 // Initialize Prisma and constants
 const prisma = new PrismaClient();
-const otherBankAPI = process.env.OTHER_BANK_API || '';
-const otherOrgCode = process.env.OTHER_ORG_CODE || '';
-const orgCode = process.env.ORG_CODE || '';
+const otherBankAPI = process.env.ANYA_BANK_API || '';
+const otherOrgCode = process.env.ANYA_ORG_CODE || '';
+const orgCode = process.env.BOND_ORG_CODE || '';
 const caCode = process.env.CA_CODE || '';
-const orgSerialCode = process.env.ORG_SERIAL_CODE || '';
-const clientId = process.env.CLIENT_ID || '';
-const clientSecret = process.env.CLIENT_SECRET || '';
+const orgSerialCode = process.env.BOND_ORG_SERIAL_CODE || '';
+const clientId = process.env.BOND_CLIENT_ID || '';
+const clientSecret = process.env.BOND_CLIENT_SECRET || '';
 
 // Validation functions
 const validateBodyIA102 = (body: BodyIA102): void => {

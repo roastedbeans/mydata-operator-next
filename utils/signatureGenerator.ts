@@ -4,17 +4,18 @@ import * as crypto from 'crypto';
 
 interface SignatureInput {
 	consent: string;
-	sign_tx_id: string;
-	timestamp: string;
+	privateKey: string;
 }
 
 export function generateSignature(data: SignatureInput): string {
+	const timestamp = new Date().toISOString();
 	// Create a basic signature payload
 	const signaturePayload = {
 		type: 'SignedConsent',
 		version: '1.0',
-		sign_tx_id: data.sign_tx_id,
-		timestamp: data.timestamp,
+		consent: data.consent,
+		timestamp,
+		privateKey: data.privateKey,
 	};
 
 	// Convert to string and encode to base64
@@ -25,38 +26,32 @@ export function generateSignature(data: SignatureInput): string {
 	return base64Signature.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-// Helper function to create the full signature response
-export function createSignatureResponse(consent: string, signTxId: string) {
-	const timestamp = new Date().toISOString();
-
-	const signedConsent = generateSignature({
-		consent: consent,
-		sign_tx_id: signTxId,
-		timestamp,
-	});
-
-	return {
-		signed_consent: signedConsent,
-		signed_consent_len: signedConsent.length,
-	};
+interface Consent {
+	consentTitle: string;
+	consent: string;
+	txId: string;
 }
 
 // Helper function to create signed array of consent list
-export function createSignedConsentList(consentList: string[], signTxId: string) {
+export function createSignedConsentList(consentList: any, userId: string, certId: string, privateKey: string) {
 	const signedConsentList = [];
-	const timestamp = new Date().toISOString();
 
 	for (const consent of consentList) {
 		const signedConsent = generateSignature({
-			consent: consent,
-			sign_tx_id: signTxId,
-			timestamp,
+			consent: consent.consent,
+			privateKey,
 		});
 
-		signedConsentList.push(signedConsent);
+		signedConsentList.push({
+			signedConsentLen: signedConsent.length,
+			signedConsent: signedConsent,
+			txId: consent.txId,
+			userId,
+			certificateId: certId,
+		});
 	}
 
-	return { signedConsentList, signedConsentListCnt: signedConsentList.length };
+	return signedConsentList;
 }
 
 export function generateCertTxId() {
@@ -66,19 +61,14 @@ export function generateCertTxId() {
 		.slice(0, 14); // YYYYMMDDHHMMSS
 
 	const id = uuidv4().replace(/-/g, ''); // Remove dashes from UUID
+
 	return `${timestamp}${id}`.substring(0, 40); // Ensure it fits within 40 characters
 }
 
 // Function to sign transaction data (generate signature)
-export function generateTxId(
-	privateKey: string,
-	transactionData: { action: string; tx_id: string; timestamp: string }
-): string {
-	// Stringify the transaction data
-	const dataToSign = JSON.stringify(transactionData);
+export function generateTxId(action: string, timestamp: string): string {
+	// Generate 60 bytes of random data
+	const randomBytes = crypto.randomBytes(60).toString('hex');
 
-	// Create a signature using HMAC with SHA256
-	const signature = crypto.createHmac('sha256', privateKey).update(dataToSign).digest('hex');
-
-	return signature;
+	return `${action}_${timestamp}_${randomBytes}`.substring(0, 74); // Ensure it fits within 74 characters
 }

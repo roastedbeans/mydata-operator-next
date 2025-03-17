@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
-import { getResponseMessage } from '@/constants/responseMessages';
+import { getResponseContent, getResponseMessage, ResponseData } from '@/constants/responseMessages';
 import { logger } from '@/utils/generateCSV';
 
 const prisma = new PrismaClient();
@@ -47,64 +47,95 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 		url,
 		query,
 		headers: headersList,
+		body,
 	};
 
 	try {
 		if (!xApiTranId || xApiTranId.length > 25) {
-			await logger(
-				JSON.stringify(request),
-				JSON.stringify(body),
-				JSON.stringify(getResponseMessage('INVALID_PARAMETERS')),
-				'400'
-			);
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
+			const responseData: ResponseData = {
+				headers: {
+					contentType: 'application/json;charset=UTF-8',
+					xApiTranId: xApiTranId || '',
+				},
+				body: getResponseMessage('INVALID_PARAMETERS'),
+			};
+			const response = getResponseContent(responseData);
+			await logger(JSON.stringify(request), JSON.stringify(response), 400);
+			return NextResponse.json(response, { status: 400 });
 		}
 
 		if (body.grant_type !== 'password' || !body.client_id || !body.client_secret) {
-			await logger(
-				JSON.stringify(request),
-				JSON.stringify(body),
-				JSON.stringify(getResponseMessage('INVALID_PARAMETERS')),
-				'400'
-			);
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 400 });
+			const responseData: ResponseData = {
+				headers: {
+					contentType: 'application/json;charset=UTF-8',
+					xApiTranId: xApiTranId || '',
+				},
+				body: getResponseMessage('INVALID_PARAMETERS'),
+			};
+			const response = getResponseContent(responseData);
+			await logger(JSON.stringify(request), JSON.stringify(response), 400);
+			return NextResponse.json(response, { status: 400 });
 		}
 
 		const client = await prisma.oAuthClient.findUnique({ where: { clientId: body.client_id } });
 		if (!client || client.clientSecret !== body.client_secret) {
-			await logger(
-				JSON.stringify(request),
-				JSON.stringify(body),
-				JSON.stringify(getResponseMessage('INVALID_PARAMETERS')),
-				'401'
-			);
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 401 });
+			const responseData: ResponseData = {
+				headers: {
+					contentType: 'application/json;charset=UTF-8',
+					xApiTranId: xApiTranId || '',
+				},
+				body: getResponseMessage('INVALID_PARAMETERS'),
+			};
+			const response = getResponseContent(responseData);
+			await logger(JSON.stringify(request), JSON.stringify(response), 401);
+			return NextResponse.json(response, { status: 401 });
 		}
 
 		if (!isValidRequest(body)) {
-			return NextResponse.json(getResponseMessage('INVALID_PARAMETERS'), { status: 401 });
+			const responseData: ResponseData = {
+				headers: {
+					contentType: 'application/json;charset=UTF-8',
+					xApiTranId: xApiTranId || '',
+				},
+				body: getResponseMessage('INVALID_PARAMETERS'),
+			};
+			const response = getResponseContent(responseData);
+			return NextResponse.json(response, { status: 401 });
 		}
-
 		const accessToken = generateToken(body.client_id, 'ip', 3600);
 		const refreshToken = generateToken(body.client_id, 'ip', 86400);
 
-		const responseData = {
-			rsp_code: getResponseMessage('SUCCESS').code,
-			rsp_msg: getResponseMessage('SUCCESS').message,
-			tx_id: body.tx_id,
-			token_type: 'Bearer',
-			access_token: accessToken,
-			expires_in: 3600,
-			refresh_token: refreshToken,
-			refresh_token_expires_in: 86400,
+		const responseData: ResponseData = {
+			headers: {
+				contentType: 'application/json;charset=UTF-8',
+				xApiTranId: xApiTranId || '',
+			},
+			body: {
+				rsp_code: getResponseMessage('SUCCESS').code,
+				rsp_msg: getResponseMessage('SUCCESS').message,
+				tx_id: body.tx_id,
+				token_type: 'Bearer',
+				access_token: accessToken,
+				expires_in: 3600,
+				refresh_token: refreshToken,
+				refresh_token_expires_in: 86400,
+			},
 		};
 
-		await logger(JSON.stringify(request), JSON.stringify(body), JSON.stringify(responseData), '200');
+		await logger(JSON.stringify(request), JSON.stringify(responseData), 200);
 		return NextResponse.json(responseData, { status: 200 });
 	} catch (error) {
 		console.error('Error in token generation:', error);
-		await logger(JSON.stringify(request), JSON.stringify(body), JSON.stringify(error), '500');
-		return NextResponse.json(getResponseMessage('INVALID_API_TRAN_ID'), { status: 400 });
+		const responseData: ResponseData = {
+			headers: {
+				contentType: 'application/json;charset=UTF-8',
+				xApiTranId: xApiTranId || '',
+			},
+			body: getResponseMessage('INTERNAL_SERVER_ERROR'),
+		};
+		const response = getResponseContent(responseData);
+		await logger(JSON.stringify(request), JSON.stringify(response), 500);
+		return NextResponse.json(response, { status: 500 });
 	} finally {
 		await prisma.$disconnect();
 	}

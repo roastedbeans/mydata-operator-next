@@ -10,7 +10,7 @@ import {
 } from '@heroui/navbar';
 
 export default function NavbarMain() {
-	const bankName = process.env.NEXT_PUBLIC_ORG_NAME;
+	const bankName = process.env.NEXT_PUBLIC_BOND_ORG_NAME;
 
 	return (
 		<Navbar>

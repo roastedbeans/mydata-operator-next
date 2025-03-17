@@ -1,5 +1,12 @@
 // app/api/constants/responseMessages.ts
 
+export interface ResponseData {
+	headers: {
+		contentType: string;
+		xApiTranId: string;
+	};
+	body: any;
+}
 export interface ResponseMessage {
 	code: string;
 	message: string;
@@ -33,10 +40,6 @@ export const ResponseCodes = {
 		code: '1003',
 		message: 'Invalid or missing x-api-tran-id',
 	},
-	INVALID_API_TYPE: {
-		code: '1004',
-		message: 'Invalid or missing x-api-type',
-	},
 	NO_CERTIFICATE_FOUND: {
 		code: '1004',
 		message: 'No certificate found',
@@ -63,6 +66,10 @@ export const ResponseCodes = {
 		code: '2004',
 		message: 'Invalid signature transaction ID',
 	},
+	INVALID_TX_ID: {
+		code: '2005',
+		message: 'Invalid transaction ID',
+	},
 
 	// Business logic errors (3000-3999)
 	SIGNATURE_GENERATION_FAILED: {
@@ -76,6 +83,12 @@ export const ResponseCodes = {
 	DUPLICATE_TRANSACTION: {
 		code: '3002',
 		message: 'Duplicate transaction detected',
+	},
+
+	// Data not found errors (4000-4999)
+	NO_ORGANIZATION_FOUND: {
+		code: '4000',
+		message: 'No organization found',
 	},
 
 	// System errors (9000-9999)
@@ -99,5 +112,12 @@ export function getResponseMessage(code: keyof typeof ResponseCodes, details?: s
 	return {
 		code: response.code,
 		message: details ? `${response.message}: ${details}` : response.message,
+	};
+}
+
+export function getResponseContent({ headers, body }: ResponseData): ResponseData {
+	return {
+		headers,
+		body,
 	};
 }
