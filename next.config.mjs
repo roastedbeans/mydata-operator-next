@@ -8,6 +8,7 @@ const nextConfig = {
 					{ key: 'Access-Control-Allow-Credentials', value: 'true' },
 					{ key: 'Access-Control-Allow-Origin', value: 'http://localhost:3000' },
 					{ key: 'Access-Control-Allow-Origin', value: 'http://localhost:4000' },
+					{ key: 'Access-Control-Allow-Origin', value: 'http://localhost:4200' },
 					{ key: 'Access-Control-Allow-Methods', value: 'GET,DELETE,PATCH,POST,PUT' },
 					{
 						key: 'Access-Control-Allow-Headers',
